@@ -18,7 +18,7 @@ use bevy::gltf::GltfNode;
 use bevy::prelude::*;
 use bevy::scene::SceneRoot;
 
-pub(crate) struct VrmInitializePlugin;
+pub struct VrmInitializePlugin;
 
 impl Plugin for VrmInitializePlugin {
     fn build(

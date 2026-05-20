@@ -361,7 +361,7 @@ impl VrmExpressionRegistry {
     }
 }
 
-pub(crate) struct VrmExpressionPlugin;
+pub struct VrmExpressionPlugin;
 
 impl Plugin for VrmExpressionPlugin {
     fn build(

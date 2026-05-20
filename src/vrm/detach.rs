@@ -30,7 +30,7 @@ use bevy::scene::SceneRoot;
 #[derive(EntityEvent)]
 pub struct RequestDetachVrm(pub Entity);
 
-pub(crate) struct VrmDetachPlugin;
+pub struct VrmDetachPlugin;
 
 impl Plugin for VrmDetachPlugin {
     fn build(

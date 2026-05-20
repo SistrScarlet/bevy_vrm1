@@ -50,7 +50,7 @@ impl HumanoidBoneRegistry {
     }
 }
 
-pub(super) struct VrmHumanoidBonePlugin;
+pub struct VrmHumanoidBonePlugin;
 
 impl Plugin for VrmHumanoidBonePlugin {
     fn build(

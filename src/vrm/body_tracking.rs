@@ -109,7 +109,7 @@ pub struct SmoothedGaze {
     pub pitch: f32,
 }
 
-pub(super) struct BodyTrackingPlugin;
+pub struct BodyTrackingPlugin;
 
 impl Plugin for BodyTrackingPlugin {
     fn build(

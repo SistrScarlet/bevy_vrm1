@@ -41,7 +41,7 @@ pub enum LookAt {
     Target(Entity),
 }
 
-pub(super) struct LookAtPlugin;
+pub struct LookAtPlugin;
 
 impl Plugin for LookAtPlugin {
     fn build(

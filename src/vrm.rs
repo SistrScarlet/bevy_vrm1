@@ -1,13 +1,13 @@
 pub mod body_tracking;
 pub mod detach;
-pub(crate) mod expressions;
+pub mod expressions;
 pub(crate) mod gltf;
-pub(crate) mod humanoid_bone;
-mod initialize;
-mod loader;
-mod look_at;
+pub mod humanoid_bone;
+pub mod initialize;
+pub mod loader;
+pub mod look_at;
 mod mtoon;
-mod node_constraint;
+pub mod node_constraint;
 pub mod spring_bone;
 
 use crate::macros::marker_component;
