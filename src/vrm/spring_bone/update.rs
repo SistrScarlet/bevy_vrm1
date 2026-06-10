@@ -2,6 +2,7 @@ use crate::system_set::VrmSystemSets;
 use crate::vrm::gltf::extensions::vrmc_spring_bone::{ColliderShape, Sphere};
 use crate::vrm::spring_bone::{SpringJointProps, SpringJointState, SpringRoot};
 use bevy::app::App;
+use bevy::ecs::entity::EntityHashMap;
 use bevy::math::Vec3;
 use bevy::prelude::*;
 use bevy::time::Time;
@@ -61,7 +62,7 @@ impl PreparedSphere {
 
 #[derive(Default)]
 struct PreparedColliders {
-    map: std::collections::HashMap<Entity, PreparedSphere>,
+    map: EntityHashMap<PreparedSphere>,
     per_root: Vec<PreparedSphere>,
 }
 
