@@ -29,6 +29,7 @@ impl From<&VrmcMaterialsExtensitions> for MToonOutline {
         Self {
             mode: match value.outline_width_mode.as_str() {
                 "worldCoordinates" => OutlineWidthMode::WorldCoordinates,
+                "screenCoordinates" => OutlineWidthMode::ScreenCoordinates,
                 _ => OutlineWidthMode::None,
             },
             width_factor: value.outline_width_factor.unwrap_or_default(),
@@ -48,6 +49,6 @@ pub enum OutlineWidthMode {
     None,
     /// The outline width is determined by the distance in world coordinates.
     WorldCoordinates,
-    // TODO: Not supported yet
-    // ScreenCoordinates,
+    /// The outline width is determined by the screen coordinates (ratio of screen height).
+    ScreenCoordinates,
 }
