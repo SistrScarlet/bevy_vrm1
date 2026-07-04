@@ -33,7 +33,10 @@ struct PreparedSphere {
 }
 
 impl PreparedSphere {
-    fn new(sphere: &Sphere, gtf: &GlobalTransform) -> Self {
+    fn new(
+        sphere: &Sphere,
+        gtf: &GlobalTransform,
+    ) -> Self {
         let (scale, _, _) = gtf.to_scale_rotation_translation();
         Self {
             center: gtf.transform_point(Vec3::from(sphere.offset)),
@@ -54,8 +57,8 @@ impl PreparedSphere {
         if distance_squared > 0.0 && distance_squared <= r * r {
             let dir = delta.normalize();
             let pos_from_collider = self.center + dir * r;
-            *next_tail = head_global_pos
-                + (pos_from_collider - head_global_pos).normalize() * bone_length;
+            *next_tail =
+                head_global_pos + (pos_from_collider - head_global_pos).normalize() * bone_length;
         }
     }
 }
@@ -191,7 +194,11 @@ mod tests {
 
     /// 旧 path (ColliderShape::apply_collision) と新 path (PreparedSphere) の
     /// next_tail 一致を assert する。期待値の手計算は不要 (= 等価性テスト)。
-    fn assert_equivalent(sphere: Sphere, gtf: GlobalTransform, initial_tail: Vec3) -> Vec3 {
+    fn assert_equivalent(
+        sphere: Sphere,
+        gtf: GlobalTransform,
+        initial_tail: Vec3,
+    ) -> Vec3 {
         let head = Vec3::new(1.0, 2.5, 3.0);
         let joint_radius = 0.05;
         let bone_length = 0.8;
