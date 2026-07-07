@@ -140,14 +140,13 @@ impl Plugin for VrmPlugin {
                 .after(VrmSystemSets::Constraints)
                 .before(VrmSystemSets::GazeControl),
         );
-        app.add_systems(
-            PostUpdate,
-            (sync_simple_transforms, propagate_parent_transforms)
-                .chain()
-                .in_set(VrmSystemSets::PropagateAfterExpressions)
-                .after(VrmSystemSets::Expressions)
-                .before(VrmSystemSets::SpringBone),
-        );
+        // fork(bevy_ash_xr SP5D): VRM spec 更新順の 2 回目の全 scene propagation
+        // (PropagateAfterExpressions) は登録しない。Expressions は MorphWeights のみ書き
+        // transform を変えないため、SpringBone が必要とする propagated globals は
+        // PropagateAfterConstraints で担保済み。GazeControl が書く目ボーン local は
+        // Bevy 標準 PostUpdate propagation が拾う (最大 1 frame 遅延の品質 tradeoff を許容)。
+        // N=50 VRM で全 scene propagation 1 回 ~1.1ms/frame の削減。
+        // VrmSystemSets::PropagateAfterExpressions 自体は ordering anchor として残置 (空 set)。
 
         app.register_type::<Vrm>()
             .register_type::<VrmPath>()
