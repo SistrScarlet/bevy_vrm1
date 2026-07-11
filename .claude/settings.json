@@ -1,3 +1,16 @@
 {
-  "autoMemoryEnabled": false
+  "autoMemoryEnabled": false,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // empty' | grep -qE \"(^|[;&|])[[:space:]]*flock[[:space:]][^;&|]*[[:space:]]['\\\"]?make([[:space:]]|$|['\\\");])\" && { echo 'BLOCKED: flock で make を包むと Makefile 内蔵 $(LOCK) と自己デッドロックする (Makefile § Build lock)。make は lock 内蔵なので直接実行する。flock で包んでよいのは cargo 直叩きのみ。' >&2; exit 2; } || exit 0"
+          }
+        ]
+      }
+    ]
+  }
 }

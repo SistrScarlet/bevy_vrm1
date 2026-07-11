@@ -8,6 +8,7 @@ use bevy::animation::{AnimatedBy, AnimationTargetId};
 use bevy::app::Plugin;
 use bevy::asset::{Assets, Handle};
 use bevy::gltf::GltfNode;
+use bevy::mesh::InheritWeightSystems;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
@@ -26,6 +27,17 @@ impl ExpressionCategory {
             "blink" | "blinkLeft" | "blinkRight" => Self::Blink,
             "lookUp" | "lookDown" | "lookLeft" | "lookRight" => Self::LookAt,
             _ => Self::Other,
+        }
+    }
+
+    /// 自動制御系 (リップシンク/瞬き/視線) のカテゴリなら true。
+    /// UI からの手動切替対象を選別する際は false のものだけを対象にする。
+    pub const fn is_auto(&self) -> bool {
+        // 網羅 match にすることで、variant 追加時に auto / manual の分類判断を
+        // コンパイルエラーで強制する (負論理だと新 variant が無言で auto 扱いになる)。
+        match self {
+            Self::Mouth | Self::Blink | Self::LookAt => true,
+            Self::Other => false,
         }
     }
 }
@@ -99,6 +111,21 @@ pub(crate) struct ExpressionNode {
 /// Built during VRM initialization. Use this to query available expressions.
 #[derive(Component, Deref, Reflect)]
 pub struct ExpressionEntityMap(pub HashMap<VrmExpression, Entity>);
+
+impl ExpressionEntityMap {
+    /// 手動切替に適した表情名 (自動制御系カテゴリ mouth/blink/lookAt を除く) を
+    /// ソート済みで返す。表情切替 UI の選択肢生成などに使う。
+    pub fn manual_expression_names(&self) -> Vec<VrmExpression> {
+        let mut names: Vec<VrmExpression> = self
+            .0
+            .keys()
+            .filter(|name| !ExpressionCategory::from_preset_name(name).is_auto())
+            .cloned()
+            .collect();
+        names.sort();
+        names
+    }
+}
 
 /// Override weight for a single expression entity.
 /// Inserted by [`SetExpressions`] or [`ModifyExpressions`], removed by [`ClearExpressions`].
@@ -386,6 +413,14 @@ impl Plugin for VrmExpressionPlugin {
                     .in_set(VrmSystemSets::Expressions)
                     .after(VrmSystemSets::GazeControl),
             );
+
+        // bind_expressions が書く MorphWeights を、bevy の inherit_weights が同フレームで
+        // 子 mesh entity の MeshMorphWeights へ同期するための順序エッジ。これがないと
+        // 両者の実行順が不定 (ambiguous) になり、表情反映が 1 frame 遅れることがある。
+        app.configure_sets(
+            PostUpdate,
+            InheritWeightSystems.after(VrmSystemSets::Expressions),
+        );
     }
 }
 
@@ -660,6 +695,31 @@ mod tests {
             override_blink: ExpressionOverrideType::None,
             override_look_at: ExpressionOverrideType::None,
         }
+    }
+
+    #[test]
+    fn manual_expression_names_excludes_auto_categories_and_sorts() {
+        let map = ExpressionEntityMap(
+            ["happy", "blink", "aa", "lookUp", "angry", "neutral"]
+                .into_iter()
+                .map(|name| (VrmExpression::from(name), Entity::PLACEHOLDER))
+                .collect(),
+        );
+        let names = map.manual_expression_names();
+        assert_eq!(
+            names,
+            vec![
+                VrmExpression::from("angry"),
+                VrmExpression::from("happy"),
+                VrmExpression::from("neutral"),
+            ]
+        );
+    }
+
+    #[test]
+    fn manual_expression_names_empty_map_returns_empty() {
+        let map = ExpressionEntityMap(Default::default());
+        assert_eq!(map.manual_expression_names(), Vec::<VrmExpression>::new());
     }
 
     fn simple_metadata(

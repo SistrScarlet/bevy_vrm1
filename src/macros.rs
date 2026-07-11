@@ -29,6 +29,12 @@ macro_rules! new_type {
             }
         }
 
+        impl std::borrow::Borrow<str> for $struct_name {
+            fn borrow(&self) -> &str {
+                &self.0
+            }
+        }
+
         impl std::fmt::Display for $struct_name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0)

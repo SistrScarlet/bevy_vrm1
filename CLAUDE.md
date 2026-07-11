@@ -10,28 +10,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
+**ビルド系コマンドは必ず `make` 経由で実行する** (生 cargo を直接叩かない)。Makefile が
+`../bevy_ash_xr` と共有のビルドロック (`flock /tmp/bevy_ash_xr-build.lock`) を内蔵しており、
+リポジトリ・worktree を跨いで同時に走る重いビルドを 1 本に強制する (WSL RAM 上限対策)。
+`flock` で make を包むのは禁止 (recipe 内蔵ロックと自己デッドロックする)。詳細は Makefile 冒頭コメント参照。
+
 ### Build and Check
 ```bash
 # Check compilation
-cargo check
+make check
 
 # Build the project
-cargo build
+make build
 
 # Build with features
-cargo build --features serde,log
+make build ARGS="--features serde,log"
 ```
 
 ### Testing
 ```bash
 # Run all tests
-cargo test
+make test
 
 # Run a specific test
-cargo test test_name
+make test ARGS="test_name"
 
 # Run tests with logging
-cargo test --features log
+make test ARGS="--features log"
 ```
 
 ### Running Examples
@@ -57,25 +62,33 @@ cargo run --example multiple_lights
 ### Linting
 The project uses Clippy with custom lints defined in `Cargo.toml`:
 ```bash
-cargo clippy
+make clippy
 ```
 
 ## Architecture Overview
 
 ### Plugin Structure
 
-The `VrmPlugin` is the main entry point that orchestrates sub-plugins:
+The `VrmPlugin` is the main entry point. It is a thin composition of `VrmCorePlugin`
+(all rendering-agnostic functionality) and `MtoonMaterialPlugin` (wgpu-based MToon
+rendering). Apps with a custom renderer (no wgpu RenderPlugin) add `VrmCorePlugin`
+directly instead — it also registers the reflect types needed for the MToon-less path
+(e.g. `MeshMaterial3d<StandardMaterial>`).
 
 ```
 VrmPlugin
-├── VrmLoaderPlugin          (Asset loading: .vrm files)
-├── VrmInitializePlugin      (VRM spawning & initialization)
-├── VrmSpringBonePlugin      (Spring physics)
-├── VrmHumanoidBonePlugin    (Bone hierarchy mapping)
-├── VrmExpressionPlugin      (Morph target expressions)
-├── VrmNodeConstraintPlugin  (VRMC_node_constraint support)
-├── MtoonMaterialPlugin      (Shader & material rendering)
-└── LookAtPlugin             (Gaze control system)
+├── VrmCorePlugin
+│   ├── VrmLoaderPlugin          (Asset loading: .vrm files)
+│   ├── VrmInitializePlugin      (VRM spawning & initialization)
+│   ├── VrmDetachPlugin          (RequestDetachVrm)
+│   ├── VrmSpringBonePlugin      (Spring physics)
+│   ├── VrmHumanoidBonePlugin    (Bone hierarchy mapping, HumanoidBoneEntities)
+│   ├── VrmExpressionPlugin      (Morph target expressions)
+│   ├── VrmNodeConstraintPlugin  (VRMC_node_constraint support)
+│   ├── LookAtPlugin             (Gaze control system)
+│   ├── BodyTrackingPlugin       (LookAt-driven head-chain tracking)
+│   └── BoneOverlayPlugin        (Additive bone rotation overlay)
+└── MtoonMaterialPlugin          (Shader & material rendering, wgpu)
 ```
 
 VRMA (animation) is a separate plugin (`VrmaPlugin`) that works alongside VrmPlugin.
@@ -99,16 +112,21 @@ VrmSystemSets::PropagateAfterConstraints (manual transform propagation)
     ↓
 VrmSystemSets::GazeControl (LookAt)
     ↓
+BoneOverlaySystems (additive bone rotation overlay)
+    ↓
 VrmSystemSets::Expressions
     ↓
-VrmSystemSets::PropagateAfterExpressions (empty anchor set — see Transform Propagation Strategy)
+VrmSystemSets::PropagateAfterExpressions (conditional propagation — runs only while a
+                                          BoneRotationOverlay is active; otherwise empty)
     ↓
 VrmSystemSets::SpringBone
     ↓
 VrmSystemSets::DetermineRedraw (triggers RequestRedraw if needed)
+    ↓
+TransformSystems::Propagate (Bevy standard propagation)
 ```
 
-**Important**: This order is guaranteed by an `app.configure_sets(PostUpdate, (...).chain())` call in `src/vrm.rs`. Do not rely on `.after()`/`.before()` against `PropagateAfterExpressions` alone — it is an empty set, and ordering against an empty set creates no edges in Bevy.
+**Important**: This order is guaranteed by an `app.configure_sets(PostUpdate, (...).chain())` call in `src/vrm.rs`, which also orders the whole chain `.after(AnimationSystems)` and `.before(TransformSystems::Propagate)` (the latter guarantees Transform writes inside the chain reach the rendered pose in the same frame). Do not rely on `.after()`/`.before()` against `PropagateAfterExpressions` alone — it can be empty, and ordering against an empty set creates no edges in Bevy.
 
 ### Key Architectural Patterns
 
@@ -176,7 +194,7 @@ app.add_systems(
 );
 ```
 
-**Fork note (bevy_ash_xr)**: Upstream ran a second full-scene propagation in `PropagateAfterExpressions` (per the VRM spec update order). This fork removes it as a performance optimization (~1.1ms/frame with 50 VRMs), accepting a quality tradeoff: transforms written by `GazeControl` (LookAt eye-bone locals and BodyTracking head-chain rotations) are only picked up by Bevy's standard `PostUpdate` propagation, so `GlobalTransform`s of head-chain descendants (colliders, joint anchors) that SpringBone reads lag by at most one frame. `PropagateAfterExpressions` remains as an empty anchor set; inter-set ordering is guaranteed by `configure_sets` (see above). If a future system writes `Transform`s that SpringBone must read in the same frame, re-add propagation to this set.
+**Fork note (bevy_ash_xr)**: Upstream ran a second full-scene propagation in `PropagateAfterExpressions` (per the VRM spec update order). This fork removes the unconditional version as a performance optimization (~1.1ms/frame with 50 VRMs), accepting a quality tradeoff: transforms written by `GazeControl` (LookAt eye-bone locals and BodyTracking head-chain rotations) are only picked up by Bevy's standard `PostUpdate` propagation — guaranteed to run after the VRM chain by the `.before(TransformSystems::Propagate)` edge on the chain — so they reach the rendered pose in the same frame, but `GlobalTransform`s of head-chain descendants (colliders, joint anchors) that SpringBone reads lag by at most one frame. Exception: while any `BoneRotationOverlay` has `weight > 0.0`, `BoneOverlayPlugin` runs a conditional propagation in `PropagateAfterExpressions` (see `src/vrm/bone_overlay.rs`), so SpringBone reads overlay-applied `GlobalTransform`s in the same frame; when no overlay is active the set is empty and costs nothing. Inter-set ordering is guaranteed by `configure_sets` (see above). If a future system writes `Transform`s that SpringBone must read in the same frame, extend the propagation condition (or re-add unconditional propagation to this set).
 
 ## Working with VRM Specifications
 
@@ -208,7 +226,9 @@ src/
 │   ├── loader.rs           (VrmAsset loading)
 │   ├── initialize.rs       (VRM spawning logic)
 │   ├── expressions.rs      (Expression registry)
-│   ├── humanoid_bone.rs    (Bone mapping)
+│   ├── humanoid_bone.rs    (Bone mapping, HumanoidBoneEntities)
+│   ├── humanoid_bone/capsule_fit.rs (Bone positions → capsule approximation)
+│   ├── bone_overlay.rs     (Additive bone rotation overlay)
 │   ├── look_at.rs          (Gaze control)
 │   ├── spring_bone/        (Physics simulation)
 │   ├── node_constraint/    (Constraint types)
