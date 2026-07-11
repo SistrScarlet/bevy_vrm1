@@ -10,28 +10,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
+**ビルド系コマンドは必ず `make` 経由で実行する** (生 cargo を直接叩かない)。Makefile が
+`../bevy_ash_xr` と共有のビルドロック (`flock /tmp/bevy_ash_xr-build.lock`) を内蔵しており、
+リポジトリ・worktree を跨いで同時に走る重いビルドを 1 本に強制する (WSL RAM 上限対策)。
+`flock` で make を包むのは禁止 (recipe 内蔵ロックと自己デッドロックする)。詳細は Makefile 冒頭コメント参照。
+
 ### Build and Check
 ```bash
 # Check compilation
-cargo check
+make check
 
 # Build the project
-cargo build
+make build
 
 # Build with features
-cargo build --features serde,log
+make build ARGS="--features serde,log"
 ```
 
 ### Testing
 ```bash
 # Run all tests
-cargo test
+make test
 
 # Run a specific test
-cargo test test_name
+make test ARGS="test_name"
 
 # Run tests with logging
-cargo test --features log
+make test ARGS="--features log"
 ```
 
 ### Running Examples
@@ -57,7 +62,7 @@ cargo run --example multiple_lights
 ### Linting
 The project uses Clippy with custom lints defined in `Cargo.toml`:
 ```bash
-cargo clippy
+make clippy
 ```
 
 ## Architecture Overview
