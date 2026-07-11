@@ -17,4 +17,12 @@ macro_rules! vrm_error {
     }};
 }
 
+macro_rules! vrm_warn {
+    ($($arg:tt)*) => {{
+        #[cfg(feature = "log")]
+        bevy::log::warn!($($arg)*)
+    }};
+}
+
 pub(crate) use vrm_error;
+pub(crate) use vrm_warn;

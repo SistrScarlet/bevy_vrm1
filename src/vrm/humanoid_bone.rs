@@ -10,6 +10,7 @@
 mod bones;
 pub mod capsule_fit;
 
+use crate::error::vrm_warn;
 use crate::prelude::*;
 use crate::vrm::gltf::extensions::VrmNode;
 use crate::vrm::humanoid_bone::bones::BonesPlugin;
@@ -158,14 +159,27 @@ fn apply_initialize_humanoid_bones(
 ) {
     let model_entity = trigger.event_target();
     let Ok(registry) = models.get(model_entity) else {
+        vrm_warn!("[HumanoidBone] HumanoidBoneRegistry not found on {model_entity}");
         return;
     };
-    let Some(hips) =
-        searcher.find_from_name(model_entity, registry.get(&VrmBone::from("hips")).unwrap())
-    else {
+    // hips は VRM 仕様上 required だが、不正な VRM(A) や node 解決に失敗した registry
+    // では欠け得るため、panic せずスキップする。
+    let Some(hips_name) = registry.get(&VrmBone::from("hips")) else {
+        vrm_warn!(
+            "[HumanoidBone] 'hips' not found in humanoid bones of {model_entity}; skipping initialization"
+        );
+        return;
+    };
+    let Some(hips) = searcher.find_from_name(model_entity, hips_name) else {
+        vrm_warn!(
+            "[HumanoidBone] hips bone entity '{hips_name}' not found under {model_entity}; skipping initialization"
+        );
         return;
     };
     let Ok(ChildOf(root_bone)) = parents.get(hips) else {
+        vrm_warn!(
+            "[HumanoidBone] hips bone of {model_entity} has no parent; skipping initialization"
+        );
         return;
     };
     let has_vrm = has_vrm.get(model_entity).is_ok_and(|h| h);
@@ -183,10 +197,14 @@ fn apply_initialize_humanoid_bones(
 
     let mut bone_entities = HumanoidBoneEntities::default();
     for (bone, name) in registry.iter() {
+        // 解決できない骨は HumanoidBoneEntities からも欠けるため、無警告だと利用側
+        // (capsule_fit 等) が原因不明のまま機能しなくなる。必ずログを残す。
         let Some(bone_entity) = searcher.find_from_name(model_entity, name.as_str()) else {
+            vrm_warn!("[HumanoidBone] bone entity '{name}' ({bone}) not found under {model_entity}");
             continue;
         };
         let Ok((tf, gtf)) = transforms.get(bone_entity) else {
+            vrm_warn!("[HumanoidBone] bone entity '{name}' ({bone}) has no Transform; skipped");
             continue;
         };
         bone_entities.0.insert(bone.clone(), bone_entity);

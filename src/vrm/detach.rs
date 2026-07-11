@@ -1,7 +1,7 @@
 use crate::vrm::body_tracking::{BodyTracking, SmoothedGaze};
 use crate::vrm::expressions::{ExpressionEntityMap, VrmExpressionRegistry};
 use crate::vrm::gltf::extensions::vrmc_vrm::LookAtProperties;
-use crate::vrm::humanoid_bone::HumanoidBoneRegistry;
+use crate::vrm::humanoid_bone::{HumanoidBoneEntities, HumanoidBoneRegistry};
 use crate::vrm::loader::VrmHandle;
 use crate::vrm::look_at::LookAt;
 use crate::vrm::mtoon::VrmcMaterialRegistry;
@@ -78,6 +78,7 @@ fn remove_vrm_components(
         .try_remove::<VrmcMaterialRegistry>()
         .try_remove::<NodeConstraintRegistry>()
         .try_remove::<ExpressionEntityMap>()
+        .try_remove::<HumanoidBoneEntities>()
         // Registries (pub(crate))
         .try_remove::<VrmExpressionRegistry>()
         .try_remove::<HumanoidBoneRegistry>()
@@ -202,7 +203,12 @@ mod tests {
 
         let vrm_entity = app
             .world_mut()
-            .spawn((Vrm, Initialized, ExpressionEntityMap(HashMap::default())))
+            .spawn((
+                Vrm,
+                Initialized,
+                ExpressionEntityMap(HashMap::default()),
+                HumanoidBoneEntities::default(),
+            ))
             .id();
 
         app.world_mut()
@@ -215,6 +221,7 @@ mod tests {
         assert!(!world.entity(vrm_entity).contains::<Vrm>());
         assert!(!world.entity(vrm_entity).contains::<Initialized>());
         assert!(!world.entity(vrm_entity).contains::<ExpressionEntityMap>());
+        assert!(!world.entity(vrm_entity).contains::<HumanoidBoneEntities>());
         // Entity itself survives
         assert!(world.get_entity(vrm_entity).is_ok());
     }

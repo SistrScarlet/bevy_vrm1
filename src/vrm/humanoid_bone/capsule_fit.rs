@@ -17,7 +17,8 @@ pub enum HumanoidCapsuleKind {
 /// 1 本のカプセルの幾何情報。
 ///
 /// ローカル Y 軸方向を軸とするカプセルを `rotation` で向け、`position` (中心) に
-/// 置いたものとして解釈する。
+/// 置いたものとして解釈する。`half_height` は円筒部の半分の長さ
+/// (カプセル全長 = `2 * (half_height + radius)`。Bevy `Capsule3d` / Rapier / Avian と同じ規約)。
 #[derive(Debug, Clone, Copy, Reflect)]
 pub struct HumanoidCapsule {
     pub kind: HumanoidCapsuleKind,
@@ -32,7 +33,8 @@ pub struct HumanoidCapsule {
 pub struct HumanoidCapsuleRatios {
     /// 四肢カプセルの半径 = 骨間距離 × この値。
     pub limb_radius_ratio: f32,
-    /// 胴体カプセルの半径 = 骨間距離 × この値。
+    /// 胴体カプセルの半径 = hips→neck 距離 × この値。
+    /// (chest の有無でセグメント数が変わっても太さが変わらないよう、全長基準で決める)
     pub torso_radius_ratio: f32,
     /// 頭カプセルの半径 = head-neck 距離 × この値。
     pub head_radius_factor: f32,
@@ -101,39 +103,51 @@ impl HumanoidBonePositions {
     }
 }
 
+/// カプセル寸法の下限 (退化した骨配置でも 0 やマイナスの寸法を返さないための floor)。
+const MIN_DIMENSION: f32 = 0.01;
+
 /// humanoid 骨の位置からカプセル群を近似生成する。
 ///
 /// 内訳: 頭 1 本 + 胴体 (chest あり: hips→chest / chest→neck の 2 本、
 /// なし: hips→neck の 1 本) + 四肢 8 本 (上腕/前腕/大腿/下腿 × 左右)。
+///
+/// ポーズ非依存: 全カプセルを骨位置の相対関係だけから決めるため、
+/// モデルが回転・転倒していても正しく身体へ沿う。
 pub fn fit_humanoid_capsules(
     bones: &HumanoidBonePositions,
     ratios: &HumanoidCapsuleRatios,
 ) -> Vec<HumanoidCapsule> {
     let mut capsules = Vec::with_capacity(11);
 
-    // 頭: 球に近いカプセル
+    // 頭: 球に近いカプセル。オフセット・向きは neck→head 方向基準
+    // (world +Y 固定だと回転・転倒したモデルで頭から外れる)。
+    let head_up = (bones.head - bones.neck).try_normalize().unwrap_or(Vec3::Y);
     let head_to_neck = (bones.neck - bones.head).length();
     let head_radius = (head_to_neck * ratios.head_radius_factor).max(0.05);
     capsules.push(HumanoidCapsule {
         kind: HumanoidCapsuleKind::Head,
-        position: bones.head + Vec3::Y * head_radius * 0.5,
-        rotation: Quat::IDENTITY,
+        position: bones.head + head_up * (head_radius * 0.5),
+        rotation: Quat::from_rotation_arc(Vec3::Y, head_up),
         radius: head_radius,
         half_height: head_radius * 0.3,
     });
 
+    // 胴体: 半径は hips→neck 全長から決める。セグメント長基準にすると
+    // optional な chest 骨の有無で同一体格の胴体の太さが約 2 倍変わってしまう。
+    let torso_radius =
+        ((bones.neck - bones.hips).length() * ratios.torso_radius_ratio).max(MIN_DIMENSION);
     match bones.chest {
         Some(chest) => {
             capsules.push(capsule_between(
                 bones.hips,
                 chest,
-                ratios.torso_radius_ratio,
+                torso_radius,
                 HumanoidCapsuleKind::Torso,
             ));
             capsules.push(capsule_between(
                 chest,
                 bones.neck,
-                ratios.torso_radius_ratio,
+                torso_radius,
                 HumanoidCapsuleKind::Torso,
             ));
         }
@@ -141,7 +155,7 @@ pub fn fit_humanoid_capsules(
             capsules.push(capsule_between(
                 bones.hips,
                 bones.neck,
-                ratios.torso_radius_ratio,
+                torso_radius,
                 HumanoidCapsuleKind::Torso,
             ));
         }
@@ -158,12 +172,8 @@ pub fn fit_humanoid_capsules(
         (bones.right_lower_leg, bones.right_foot),
     ];
     for (a, b) in limbs {
-        capsules.push(capsule_between(
-            a,
-            b,
-            ratios.limb_radius_ratio,
-            HumanoidCapsuleKind::Limb,
-        ));
+        let radius = ((b - a).length() * ratios.limb_radius_ratio).max(MIN_DIMENSION);
+        capsules.push(capsule_between(a, b, radius, HumanoidCapsuleKind::Limb));
     }
 
     capsules
@@ -172,14 +182,15 @@ pub fn fit_humanoid_capsules(
 fn capsule_between(
     a: Vec3,
     b: Vec3,
-    radius_ratio: f32,
+    radius: f32,
     kind: HumanoidCapsuleKind,
 ) -> HumanoidCapsule {
     let center = (a + b) * 0.5;
     let dir = b - a;
     let length = dir.length();
-    let half_height = (length * 0.5).max(0.01);
-    let radius = (length * radius_ratio).max(0.01);
+    // 半球キャップが両端の関節を radius 分はみ出さないよう円筒部から差し引く
+    // (カプセル全長 = 2 * (half_height + radius) を骨長に一致させる)。
+    let half_height = (length * 0.5 - radius).max(MIN_DIMENSION);
     let rotation = if length > 1e-6 {
         Quat::from_rotation_arc(Vec3::Y, dir.normalize())
     } else {
@@ -335,5 +346,87 @@ mod tests {
         let axis = left_upper.rotation * Vec3::Y;
         let expected = (bones.left_lower_arm - bones.left_upper_arm).normalize();
         assert!(axis.dot(expected) > 0.999);
+    }
+
+    #[test]
+    fn torso_radius_is_independent_of_chest_presence() {
+        let with_chest = standard_bones();
+        let without_chest = HumanoidBonePositions {
+            chest: None,
+            ..with_chest
+        };
+        let ratios = HumanoidCapsuleRatios::default();
+        let torso_radius = |bones: &HumanoidBonePositions| {
+            fit_humanoid_capsules(bones, &ratios)
+                .into_iter()
+                .filter(|c| c.kind == HumanoidCapsuleKind::Torso)
+                .map(|c| c.radius)
+                .collect::<Vec<_>>()
+        };
+        let radii_with = torso_radius(&with_chest);
+        let radii_without = torso_radius(&without_chest);
+        // optional な chest 骨の有無で胴体の太さが変わらないこと
+        for radius in radii_with.iter().chain(radii_without.iter()) {
+            assert!((radius - radii_without[0]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn capsule_caps_do_not_overshoot_joints() {
+        let bones = standard_bones();
+        let capsules = fit_humanoid_capsules(&bones, &HumanoidCapsuleRatios::default());
+        // 左下腿 (left_lower_leg → left_foot): カプセル全長 = 骨長
+        let bone_length = (bones.left_foot - bones.left_lower_leg).length();
+        let shin = capsules
+            .iter()
+            .filter(|c| c.kind == HumanoidCapsuleKind::Limb)
+            .find(|c| {
+                let center = (bones.left_lower_leg + bones.left_foot) * 0.5;
+                (c.position - center).length() < 1e-6
+            })
+            .unwrap();
+        let total_extent = 2.0 * (shin.half_height + shin.radius);
+        assert!(
+            (total_extent - bone_length).abs() < 1e-6,
+            "total_extent={total_extent}, bone_length={bone_length}"
+        );
+    }
+
+    #[test]
+    fn head_capsule_follows_neck_to_head_direction_when_rotated() {
+        // 標準スケルトンを Z 軸周りに 90° 回転 (横倒し) しても
+        // 頭カプセルが neck→head 方向 (world -X) に沿うこと
+        let rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+        let std_bones = standard_bones();
+        let bones = HumanoidBonePositions {
+            head: rotation * std_bones.head,
+            neck: rotation * std_bones.neck,
+            chest: std_bones.chest.map(|c| rotation * c),
+            hips: rotation * std_bones.hips,
+            left_upper_arm: rotation * std_bones.left_upper_arm,
+            left_lower_arm: rotation * std_bones.left_lower_arm,
+            left_hand: rotation * std_bones.left_hand,
+            right_upper_arm: rotation * std_bones.right_upper_arm,
+            right_lower_arm: rotation * std_bones.right_lower_arm,
+            right_hand: rotation * std_bones.right_hand,
+            left_upper_leg: rotation * std_bones.left_upper_leg,
+            left_lower_leg: rotation * std_bones.left_lower_leg,
+            left_foot: rotation * std_bones.left_foot,
+            right_upper_leg: rotation * std_bones.right_upper_leg,
+            right_lower_leg: rotation * std_bones.right_lower_leg,
+            right_foot: rotation * std_bones.right_foot,
+        };
+        let capsules = fit_humanoid_capsules(&bones, &HumanoidCapsuleRatios::default());
+        let head = capsules
+            .iter()
+            .find(|c| c.kind == HumanoidCapsuleKind::Head)
+            .unwrap();
+        let expected_up = (bones.head - bones.neck).normalize();
+        // オフセットが neck→head 方向
+        let offset = (head.position - bones.head).normalize();
+        assert!(offset.dot(expected_up) > 0.999);
+        // カプセル軸も neck→head 方向
+        let axis = head.rotation * Vec3::Y;
+        assert!(axis.dot(expected_up) > 0.999);
     }
 }

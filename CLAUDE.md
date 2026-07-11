@@ -107,16 +107,21 @@ VrmSystemSets::PropagateAfterConstraints (manual transform propagation)
     ↓
 VrmSystemSets::GazeControl (LookAt)
     ↓
+BoneOverlaySystems (additive bone rotation overlay)
+    ↓
 VrmSystemSets::Expressions
     ↓
-VrmSystemSets::PropagateAfterExpressions (empty anchor set — see Transform Propagation Strategy)
+VrmSystemSets::PropagateAfterExpressions (conditional propagation — runs only while a
+                                          BoneRotationOverlay is active; otherwise empty)
     ↓
 VrmSystemSets::SpringBone
     ↓
 VrmSystemSets::DetermineRedraw (triggers RequestRedraw if needed)
+    ↓
+TransformSystems::Propagate (Bevy standard propagation)
 ```
 
-**Important**: This order is guaranteed by an `app.configure_sets(PostUpdate, (...).chain())` call in `src/vrm.rs`. Do not rely on `.after()`/`.before()` against `PropagateAfterExpressions` alone — it is an empty set, and ordering against an empty set creates no edges in Bevy.
+**Important**: This order is guaranteed by an `app.configure_sets(PostUpdate, (...).chain())` call in `src/vrm.rs`, which also orders the whole chain `.after(AnimationSystems)` and `.before(TransformSystems::Propagate)` (the latter guarantees Transform writes inside the chain reach the rendered pose in the same frame). Do not rely on `.after()`/`.before()` against `PropagateAfterExpressions` alone — it can be empty, and ordering against an empty set creates no edges in Bevy.
 
 ### Key Architectural Patterns
 
@@ -184,7 +189,7 @@ app.add_systems(
 );
 ```
 
-**Fork note (bevy_ash_xr)**: Upstream ran a second full-scene propagation in `PropagateAfterExpressions` (per the VRM spec update order). This fork removes it as a performance optimization (~1.1ms/frame with 50 VRMs), accepting a quality tradeoff: transforms written by `GazeControl` (LookAt eye-bone locals and BodyTracking head-chain rotations) are only picked up by Bevy's standard `PostUpdate` propagation, so `GlobalTransform`s of head-chain descendants (colliders, joint anchors) that SpringBone reads lag by at most one frame. `PropagateAfterExpressions` remains as an empty anchor set; inter-set ordering is guaranteed by `configure_sets` (see above). If a future system writes `Transform`s that SpringBone must read in the same frame, re-add propagation to this set.
+**Fork note (bevy_ash_xr)**: Upstream ran a second full-scene propagation in `PropagateAfterExpressions` (per the VRM spec update order). This fork removes the unconditional version as a performance optimization (~1.1ms/frame with 50 VRMs), accepting a quality tradeoff: transforms written by `GazeControl` (LookAt eye-bone locals and BodyTracking head-chain rotations) are only picked up by Bevy's standard `PostUpdate` propagation — guaranteed to run after the VRM chain by the `.before(TransformSystems::Propagate)` edge on the chain — so they reach the rendered pose in the same frame, but `GlobalTransform`s of head-chain descendants (colliders, joint anchors) that SpringBone reads lag by at most one frame. Exception: while any `BoneRotationOverlay` has `weight > 0.0`, `BoneOverlayPlugin` runs a conditional propagation in `PropagateAfterExpressions` (see `src/vrm/bone_overlay.rs`), so SpringBone reads overlay-applied `GlobalTransform`s in the same frame; when no overlay is active the set is empty and costs nothing. Inter-set ordering is guaranteed by `configure_sets` (see above). If a future system writes `Transform`s that SpringBone must read in the same frame, extend the propagation condition (or re-add unconditional propagation to this set).
 
 ## Working with VRM Specifications
 

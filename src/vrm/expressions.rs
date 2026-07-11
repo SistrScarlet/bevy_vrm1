@@ -33,7 +33,12 @@ impl ExpressionCategory {
     /// 自動制御系 (リップシンク/瞬き/視線) のカテゴリなら true。
     /// UI からの手動切替対象を選別する際は false のものだけを対象にする。
     pub const fn is_auto(&self) -> bool {
-        !matches!(self, Self::Other)
+        // 網羅 match にすることで、variant 追加時に auto / manual の分類判断を
+        // コンパイルエラーで強制する (負論理だと新 variant が無言で auto 扱いになる)。
+        match self {
+            Self::Mouth | Self::Blink | Self::LookAt => true,
+            Self::Other => false,
+        }
     }
 }
 

@@ -17,6 +17,11 @@ pub enum VrmSystemSets {
 
     /// Manual transform propagation after Expressions.
     /// This propagates Transform changes from `GazeControl` and Expressions to `GlobalTransform`.
+    ///
+    /// `fork(bevy_ash_xr)`: 常時の propagation は登録されない。`BoneRotationOverlay` が
+    /// アクティブなフレームのみ条件付き propagation が走る (詳細は `src/vrm.rs` の
+    /// fork コメント参照)。この set は空になり得るため、順序はこの set への
+    /// `.after()`/`.before()` ではなく `VrmCorePlugin` の `configure_sets` chain が担保する。
     PropagateAfterExpressions,
 
     /// This is used for spring bones.

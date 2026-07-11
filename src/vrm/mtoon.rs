@@ -22,6 +22,20 @@ const MTOON_VERTEX_SHADER_HANDLE: Handle<Shader> =
 const MTOON_TYPES_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("5d9302a3-6498-9d2a-fadb-842d01c87697");
 
+/// `MToon` 系 reflect 型の登録一覧 (管理箇所はここ 1 箇所のみ)。
+///
+/// [`MtoonMaterialPlugin`] と `VrmCorePlugin` (`MToon` 抜き構成での scene spawn panic 防止)
+/// の双方から呼ばれる。MToon 系の reflect 型を増やす場合は必ずここへ追加すること
+/// (`MToon` 抜き構成には登録漏れを検出するテストがないため)。
+pub(crate) fn register_mtoon_reflect_types(app: &mut App) {
+    app.register_type::<MToonMaterial>()
+        .register_type::<MToonOutline>()
+        .register_type::<VrmcMaterialRegistry>()
+        .register_type::<RimLighting>()
+        .register_type::<UVAnimation>()
+        .register_type::<Shade>();
+}
+
 pub struct MtoonMaterialPlugin;
 
 impl Plugin for MtoonMaterialPlugin {
@@ -29,13 +43,8 @@ impl Plugin for MtoonMaterialPlugin {
         &self,
         app: &mut App,
     ) {
-        app.register_type::<MToonMaterial>()
-            .register_type::<MToonOutline>()
-            .register_type::<VrmcMaterialRegistry>()
-            .register_type::<RimLighting>()
-            .register_type::<UVAnimation>()
-            .register_type::<Shade>()
-            .add_plugins(MaterialPlugin::<MToonMaterial>::default())
+        register_mtoon_reflect_types(app);
+        app.add_plugins(MaterialPlugin::<MToonMaterial>::default())
             .add_plugins((MToonMaterialSetupPlugin, MToonOutlinePlugin));
         load_internal_asset!(
             app,
