@@ -10,8 +10,9 @@ metadata:
 
 - **上流 PR はしない** (AI slop 回避)。perf 改善なども upstream に送らない
 - 上流は v0.7.1 (2026-04-21) で停滞。上流待ちせず fork を進化させる
-- 作業ブランチは `ash-xr-integration` (upstream main = v0.7.1 の真上に独自 commits が線形に乗る構成)。bevy_ash_xr が `path = "../bevy_vrm1"` で参照するため、**常にこのブランチをチェックアウトしておく**
-- path 依存のままで良い (git 依存への変更は不要、2026-07-11 user 確認)
+- **開発トランクは `main`** (2026-07-11 に `ash-xr-integration` を fast-forward 統合して廃止)。upstream v0.7.1 の真上に独自 commits が線形に乗る構成。upstream 追従は remote ref `upstream/main` から merge / cherry-pick
+- remote 構成: `origin` = SistrScarlet/bevy_vrm1 (fork)、`upstream` = not-elm/bevy_vrm1 (参照専用)
+- path 依存のままで良い (git 依存への変更は不要、2026-07-11 user 確認)。bevy_ash_xr が `path = "../bevy_vrm1"` で参照するため **常に `main` をチェックアウトしておく**
 - Bevy 0.19 upgrade 時は自前 port + wgpu/mtoon 部 drop + workspace vendor 化を再判断
 - bevy_ash_xr が使うのは「VRM asset loader + humanoid rig ECS」のみ。MtoonMaterialPlugin は vrm_bridge で除外済み (描画は AshMtoonExtension)
 - 対応する bevy_ash_xr 側 memory: `../bevy_ash_xr/docs/memory/reference_bevy_vrm1.md`
