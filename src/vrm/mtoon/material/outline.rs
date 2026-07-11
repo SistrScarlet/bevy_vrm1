@@ -50,5 +50,9 @@ pub enum OutlineWidthMode {
     /// The outline width is determined by the distance in world coordinates.
     WorldCoordinates,
     /// The outline width is determined by the screen coordinates (ratio of screen height).
+    ///
+    /// Note: this crate's built-in `MToon` renderer does not implement this mode yet;
+    /// it currently renders no outline (same as [`OutlineWidthMode::None`]).
+    /// The parsed value is preserved so that external renderers can consume it.
     ScreenCoordinates,
 }

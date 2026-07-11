@@ -101,14 +101,14 @@ VrmSystemSets::GazeControl (LookAt)
     ↓
 VrmSystemSets::Expressions
     ↓
-VrmSystemSets::PropagateAfterExpressions (manual transform propagation)
+VrmSystemSets::PropagateAfterExpressions (empty anchor set — see Transform Propagation Strategy)
     ↓
 VrmSystemSets::SpringBone
     ↓
 VrmSystemSets::DetermineRedraw (triggers RequestRedraw if needed)
 ```
 
-**Important**: Manual transform propagation is inserted at two points to ensure `GlobalTransform` is updated before downstream systems use it. This is critical for correct rendering and physics.
+**Important**: This order is guaranteed by an `app.configure_sets(PostUpdate, (...).chain())` call in `src/vrm.rs`. Do not rely on `.after()`/`.before()` against `PropagateAfterExpressions` alone — it is an empty set, and ordering against an empty set creates no edges in Bevy.
 
 ### Key Architectural Patterns
 
@@ -160,10 +160,9 @@ Updates `Head`, `LeftEye`, `RightEye` bone rotations based on `LookAtProperties`
 
 ## Transform Propagation Strategy
 
-Bevy's default `TransformPropagate` runs once in `PostUpdate`. This crate manually invokes transform propagation **twice** to comply with VRM spec:
+Bevy's default `TransformPropagate` runs once in `PostUpdate`. This crate manually invokes transform propagation **once**, after Constraints:
 
-1. **After Constraints**: Ensures constraint changes propagate to `GlobalTransform` before LookAt reads positions
-2. **After Expressions**: Ensures expression changes propagate before SpringBone physics reads positions
+1. **After Constraints** (`PropagateAfterConstraints`): Ensures constraint changes propagate to `GlobalTransform` before LookAt reads positions
 
 This is implemented in `src/vrm.rs` using:
 ```rust
@@ -176,6 +175,8 @@ app.add_systems(
         .in_set(VrmSystemSets::PropagateAfterConstraints)
 );
 ```
+
+**Fork note (bevy_ash_xr)**: Upstream ran a second full-scene propagation in `PropagateAfterExpressions` (per the VRM spec update order). This fork removes it as a performance optimization (~1.1ms/frame with 50 VRMs), accepting a quality tradeoff: transforms written by `GazeControl` (LookAt eye-bone locals and BodyTracking head-chain rotations) are only picked up by Bevy's standard `PostUpdate` propagation, so `GlobalTransform`s of head-chain descendants (colliders, joint anchors) that SpringBone reads lag by at most one frame. `PropagateAfterExpressions` remains as an empty anchor set; inter-set ordering is guaranteed by `configure_sets` (see above). If a future system writes `Transform`s that SpringBone must read in the same frame, re-add propagation to this set.
 
 ## Working with VRM Specifications
 
