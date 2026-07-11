@@ -39,6 +39,7 @@ vrm1 の batch-1 は main マージ済み (`5e28802`)。残りは ash_xr 側:
 | batch-2: VR IK の VRM 知識層移管 | 未着手 (設計から) | ash_xr `ik/` の移管。切断面の設計判断が必要: 外部ポーズ入力用 SystemSet の新設、feature gate の要否、`FootStepState` (歩行サイクル) はアプリ側残置。対象 = 軸 retarget (`ik/systems.rs:549-555` rest translation → bone axis 補正、VRM +Z ↔ Bevy -Z の model_flip)、rest pose キャリブレーション (`ik/calibration.rs`)、2 ボーン解析 IK + 腰推定 + スパイン分配 (`ik/solver.rs`、純 bevy_math)。`apply_vr_ik` の 16 個別 `*BoneEntity` query → `HumanoidBoneEntities` 移行も batch-2 で (ホットパスのため batch-1 では見送り) |
 | spring bone 単独 reset / pause API | 未着手 | 現状リセットは `PlayVrma::reset_spring_bones` 経由のみ。`SpringJointState` / `reset_velocity()` は pub(crate)。ash_xr の LOD detach/reattach と組み合わせると将来必要になる見込み (2026-07-11 調査) |
 | `LookAtType::Expression` 実装 | 未着手 | `src/vrm/look_at.rs:123` が `todo!()`。Bone モードのみ動作 |
+| `vrm_error!` の format capture 不具合 | 未着手 (小粒) | `src/error.rs` の arm 1 (`$err:expr`) は単一文字列リテラルにもマッチし `let _e = "..{name}.."` → `error!("{_e}")` となるため inline capture が展開されず波括弧ごと出力される。`src/vrma/initialize.rs` の既存 5 メッセージが該当。修正案: リテラル+capture 用の arm を先頭に足すか、該当呼び出しを `vrm_warn!` 同様のパススルー arm に寄せる (2026-07-11 の review 作業中に発見。新規コードは `vrm_warn!` を使用済み) |
 
 ## 完了済 Branch
 
