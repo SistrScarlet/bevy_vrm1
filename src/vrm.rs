@@ -130,23 +130,42 @@ impl Plugin for VrmPlugin {
             BodyTrackingPlugin,
         ));
 
+        // VRM spec 更新順 (https://vrm.dev/api/api_update/) を set chain で保証する。
+        // 空 set への .after() は Bevy ではエッジを生まないため、この chain が
+        // set 間順序の唯一の担保 (個々のシステムの .after/.before は意図の明示用)。
+        app.configure_sets(
+            PostUpdate,
+            (
+                VrmSystemSets::Constraints,
+                VrmSystemSets::PropagateAfterConstraints,
+                VrmSystemSets::GazeControl,
+                VrmSystemSets::Expressions,
+                VrmSystemSets::PropagateAfterExpressions,
+                VrmSystemSets::SpringBone,
+                VrmSystemSets::DetermineRedraw,
+            )
+                .chain()
+                .after(AnimationSystems),
+        );
+
         // Add manual transform propagation systems to follow VRM spec update order
         // See: https://vrm.dev/api/api_update/
         app.add_systems(
             PostUpdate,
             (sync_simple_transforms, propagate_parent_transforms)
                 .chain()
-                .in_set(VrmSystemSets::PropagateAfterConstraints)
-                .after(VrmSystemSets::Constraints)
-                .before(VrmSystemSets::GazeControl),
+                .in_set(VrmSystemSets::PropagateAfterConstraints),
         );
-        // fork(bevy_ash_xr SP5D): VRM spec 更新順の 2 回目の全 scene propagation
-        // (PropagateAfterExpressions) は登録しない。Expressions は MorphWeights のみ書き
-        // transform を変えないため、SpringBone が必要とする propagated globals は
-        // PropagateAfterConstraints で担保済み。GazeControl が書く目ボーン local は
-        // Bevy 標準 PostUpdate propagation が拾う (最大 1 frame 遅延の品質 tradeoff を許容)。
-        // N=50 VRM で全 scene propagation 1 回 ~1.1ms/frame の削減。
-        // VrmSystemSets::PropagateAfterExpressions 自体は ordering anchor として残置 (空 set)。
+        // fork(bevy_ash_xr): VRM spec 更新順の 2 回目の全 scene propagation
+        // (PropagateAfterExpressions) は登録しない (N=50 VRM で ~1.1ms/frame の削減)。
+        // 品質 tradeoff として以下を許容する:
+        // - Expressions は MorphWeights のみ書き transform を変えないため影響なし。
+        // - GazeControl が書く transform (LookAt の目ボーン local、および BodyTracking の
+        //   頭部チェーン回転) は Bevy 標準 PostUpdate propagation が拾うため、頭部チェーン
+        //   配下の collider・joint anchor の GlobalTransform は今フレームの回転を反映せず、
+        //   SpringBone の物理入力は最大 1 frame 遅延する。
+        // VrmSystemSets::PropagateAfterExpressions は空 set として残置 (順序は上の
+        // configure_sets が担保)。
 
         app.register_type::<Vrm>()
             .register_type::<VrmPath>()
