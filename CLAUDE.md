@@ -232,3 +232,9 @@ src/
 2. **Transform Propagation**: If a system modifies `Transform` and another system needs to read `GlobalTransform` in the same frame, manual propagation may be needed
 3. **Registry Dependencies**: Systems that need bone entities must run after `RequestInitializeHumanoidBones` completes
 4. **Changed Filters**: Constraint systems use `Changed<Transform>` filters for performance; ensure source transforms are actually marked as changed
+
+## Memory
+
+memory の実体は repo 内 `docs/memory/` (harness auto-memory は無効化済 = `.claude/settings.json` の `autoMemoryEnabled: false`、旧 `~/.claude/projects/.../memory/` は削除済 = 書込禁止)。書込・更新は `.claude/rules/memory-format.md` の書式規律に従い手動実施。
+
+@docs/memory/MEMORY.md
