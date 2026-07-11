@@ -2,7 +2,6 @@ use crate::system_set::VrmSystemSets;
 use crate::vrm::gltf::extensions::vrmc_spring_bone::{ColliderShape, Sphere};
 use crate::vrm::spring_bone::{SpringJointProps, SpringJointState, SpringRoot};
 use bevy::app::App;
-use bevy::ecs::entity::EntityHashMap;
 use bevy::math::Vec3;
 use bevy::prelude::*;
 use bevy::time::Time;
@@ -16,15 +15,15 @@ impl Plugin for SpringBoneUpdatePlugin {
     ) {
         app.add_systems(
             PostUpdate,
-            update_spring_bones
-                .in_set(VrmSystemSets::SpringBone)
-                .after(VrmSystemSets::PropagateAfterExpressions),
+            update_spring_bones.in_set(VrmSystemSets::SpringBone),
         );
     }
 }
 
-/// frame 内で不変な collider の world 空間データ。
-/// per-check の SRT 分解 + `transform_point` + Query lookup を frame 先頭 1 回に集約する。
+/// root の joint loop 中は不変な collider の world 空間データ。
+/// per-check の SRT 分解 + `transform_point` + Query lookup を root 先頭 1 回に集約する。
+/// root ごとに再構築するため、同一ノード上の複数 collider shape はそれぞれ保持され、
+/// 先に処理された root の joint 書き込みも次 root の collider に反映される。
 /// Capsule は narrow phase 未実装 (`vrmc_spring_bone.rs` の TODO) のため prepare 対象外。
 #[derive(Copy, Clone, Debug)]
 struct PreparedSphere {
@@ -37,10 +36,9 @@ impl PreparedSphere {
         sphere: &Sphere,
         gtf: &GlobalTransform,
     ) -> Self {
-        let (scale, _, _) = gtf.to_scale_rotation_translation();
         Self {
             center: gtf.transform_point(Vec3::from(sphere.offset)),
-            world_radius: sphere.radius * scale.abs().max_element(),
+            world_radius: sphere.radius * gtf.scale().abs().max_element(),
         }
     }
 
@@ -63,36 +61,13 @@ impl PreparedSphere {
     }
 }
 
-#[derive(Default)]
-struct PreparedColliders {
-    map: EntityHashMap<PreparedSphere>,
-    per_root: Vec<PreparedSphere>,
-}
-
 fn update_spring_bones(
     mut transforms: Query<(&mut Transform, &mut GlobalTransform)>,
     mut joints: Query<(&ChildOf, &mut SpringJointState, &SpringJointProps)>,
     spring_roots: Query<&SpringRoot>,
     time: Res<Time>,
-    mut prepared: Local<PreparedColliders>,
+    mut per_root: Local<Vec<PreparedSphere>>,
 ) {
-    let PreparedColliders { map, per_root } = &mut *prepared;
-    map.clear();
-    for spring_root in spring_roots.iter() {
-        for (collider, shape) in spring_root.colliders.iter().copied() {
-            let ColliderShape::Sphere(sphere) = shape else {
-                continue;
-            };
-            if map.contains_key(&collider) {
-                continue;
-            }
-            let Ok((_, gtf)) = transforms.get(collider) else {
-                continue;
-            };
-            map.insert(collider, PreparedSphere::new(&sphere, gtf));
-        }
-    }
-
     let delta_time = time.delta_secs();
     for spring_root in spring_roots.iter() {
         let center_gtf = spring_root
@@ -100,13 +75,15 @@ fn update_spring_bones(
             .and_then(|center| transforms.get(center).ok())
             .map(|(_, gtf)| gtf)
             .copied();
+        let center_inverse = center_gtf.map(|gtf| gtf.to_matrix().inverse());
         per_root.clear();
-        per_root.extend(
-            spring_root
-                .colliders
-                .iter()
-                .filter_map(|(entity, _)| map.get(entity).copied()),
-        );
+        per_root.extend(spring_root.colliders.iter().filter_map(|(entity, shape)| {
+            let ColliderShape::Sphere(sphere) = shape else {
+                return None;
+            };
+            let (_, gtf) = transforms.get(*entity).ok()?;
+            Some(PreparedSphere::new(sphere, gtf))
+        }));
         for joint in spring_root.joints.iter().copied() {
             let Ok((child_of, mut state, props)) = joints.get_mut(joint) else {
                 continue;
@@ -145,7 +122,7 @@ fn update_spring_bones(
             }
 
             state.prev_tail = state.current_tail;
-            state.current_tail = global_to_center_local(next_tail, &center_gtf);
+            state.current_tail = global_to_center_local(next_tail, &center_inverse);
 
             let to = (parent_gtf.to_matrix() * state.initial_local_matrix)
                 .inverse()
@@ -174,12 +151,14 @@ fn center_local_to_global(
     }
 }
 
+/// `center_inverse` は root ごとに 1 回だけ計算した center 行列の逆行列
+/// (joint loop 内で毎回逆行列を計算しないための hoist)。
 fn global_to_center_local(
     tail_pos: Vec3,
-    center_gtf: &Option<GlobalTransform>,
+    center_inverse: &Option<Mat4>,
 ) -> Vec3 {
-    if let Some(gtf) = center_gtf.as_ref() {
-        gtf.to_matrix().inverse().transform_point3(tail_pos)
+    if let Some(inverse) = center_inverse.as_ref() {
+        inverse.transform_point3(tail_pos)
     } else {
         tail_pos
     }
@@ -188,54 +167,79 @@ fn global_to_center_local(
 #[cfg(test)]
 mod tests {
     use super::PreparedSphere;
-    use crate::vrm::gltf::extensions::vrmc_spring_bone::{ColliderShape, Sphere};
+    use crate::vrm::gltf::extensions::vrmc_spring_bone::Sphere;
     use bevy::math::{Quat, Vec3};
     use bevy::prelude::{GlobalTransform, Transform};
 
-    /// 旧 path (ColliderShape::apply_collision) と新 path (PreparedSphere) の
-    /// next_tail 一致を assert する。期待値の手計算は不要 (= 等価性テスト)。
-    fn assert_equivalent(
+    const HEAD: Vec3 = Vec3::new(1.0, 2.5, 3.0);
+    const JOINT_RADIUS: f32 = 0.05;
+    const BONE_LENGTH: f32 = 0.8;
+
+    /// 衝突解決後の不変条件を assert する:
+    /// - tail は collider 中心から遠ざかる方向に押し出されている
+    ///   (`bone_length` 再正規化があるため合成半径ちょうどまでは保証されない)
+    /// - tail は head から `bone_length` の距離を維持している
+    fn assert_collision_invariants(
         sphere: Sphere,
         gtf: GlobalTransform,
         initial_tail: Vec3,
     ) -> Vec3 {
-        let head = Vec3::new(1.0, 2.5, 3.0);
-        let joint_radius = 0.05;
-        let bone_length = 0.8;
-        let mut old_tail = initial_tail;
-        let mut new_tail = initial_tail;
-        ColliderShape::Sphere(sphere).apply_collision(
-            &mut old_tail,
-            &gtf,
-            head,
-            joint_radius,
-            bone_length,
+        let prepared = PreparedSphere::new(&sphere, &gtf);
+        let mut tail = initial_tail;
+        prepared.apply_collision(&mut tail, HEAD, JOINT_RADIUS, BONE_LENGTH);
+        assert!(
+            tail.distance(prepared.center) > initial_tail.distance(prepared.center),
+            "tail が collider から遠ざかっていない: {tail:?}"
         );
-        PreparedSphere::new(&sphere, &gtf).apply_collision(
-            &mut new_tail,
-            head,
-            joint_radius,
-            bone_length,
+        assert!(
+            (tail.distance(HEAD) - BONE_LENGTH).abs() < 1e-4,
+            "bone_length が保存されていない: {}",
+            tail.distance(HEAD)
         );
-        assert_eq!(old_tail, new_tail);
-        old_tail
+        tail
     }
 
     #[test]
-    fn collision_branch_fires_and_matches() {
+    fn prepared_sphere_applies_offset_and_max_scale() {
+        let sphere = Sphere {
+            offset: [0.1, 0.2, 0.3],
+            radius: 0.5,
+        };
+        let gtf = GlobalTransform::from(Transform {
+            translation: Vec3::new(1.0, 2.0, 3.0),
+            rotation: Quat::IDENTITY,
+            scale: Vec3::new(1.5, 1.0, 1.0),
+        });
+        let prepared = PreparedSphere::new(&sphere, &gtf);
+        assert!(
+            prepared
+                .center
+                .abs_diff_eq(Vec3::new(1.0 + 0.1 * 1.5, 2.2, 3.3), 1e-5),
+            "offset が world 空間に変換されていない: {:?}",
+            prepared.center
+        );
+        assert!(
+            (prepared.world_radius - 0.5 * 1.5).abs() < 1e-5,
+            "radius に最大軸 scale が適用されていない: {}",
+            prepared.world_radius
+        );
+    }
+
+    #[test]
+    fn collision_pushes_tail_away_from_collider() {
         let sphere = Sphere {
             offset: [0.0, 0.0, 0.0],
             radius: 1.0,
         };
         let gtf = GlobalTransform::from(Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
         let initial = Vec3::new(1.2, 2.2, 3.1);
-        let result = assert_equivalent(sphere, gtf, initial);
-        // 衝突分岐が実際に発火していること (= no-op 同士の空一致でない)
+        let result = assert_collision_invariants(sphere, gtf, initial);
+        // 衝突分岐が実際に発火していること
         assert_ne!(result, initial);
     }
 
     #[test]
-    fn general_transform_matches() {
+    fn collision_invariants_hold_under_general_transform() {
         let sphere = Sphere {
             offset: [0.1, 0.2, 0.3],
             radius: 0.5,
@@ -245,6 +249,24 @@ mod tests {
             rotation: Quat::from_rotation_y(0.7),
             scale: Vec3::new(1.5, 1.0, 1.0),
         });
-        assert_equivalent(sphere, gtf, Vec3::new(1.3, 2.4, 3.2));
+        assert_collision_invariants(sphere, gtf, Vec3::new(1.3, 2.4, 3.2));
+    }
+
+    #[test]
+    fn no_collision_leaves_tail_untouched() {
+        let sphere = Sphere {
+            offset: [0.0, 0.0, 0.0],
+            radius: 0.1,
+        };
+        let gtf = GlobalTransform::from(Transform::from_translation(Vec3::new(10.0, 10.0, 10.0)));
+        let initial = Vec3::new(1.2, 2.2, 3.1);
+        let mut tail = initial;
+        PreparedSphere::new(&sphere, &gtf).apply_collision(
+            &mut tail,
+            HEAD,
+            JOINT_RADIUS,
+            BONE_LENGTH,
+        );
+        assert_eq!(tail, initial);
     }
 }

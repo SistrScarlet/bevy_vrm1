@@ -102,36 +102,6 @@ impl Default for ColliderShape {
 }
 
 impl ColliderShape {
-    /// Returns the collision vector from the collider to the target position.
-    pub fn apply_collision(
-        &self,
-        next_tail: &mut Vec3,
-        collider: &GlobalTransform,
-        head_global_pos: Vec3,
-        joint_radius: f32,
-        bone_length: f32,
-    ) {
-        let (scale, _, _) = collider.to_scale_rotation_translation();
-        let max_collider_scale = scale.abs().max_element();
-        match self {
-            Self::Sphere(sphere) => {
-                let translation = collider.transform_point(Vec3::from(sphere.offset));
-                let r = joint_radius + sphere.radius * max_collider_scale;
-                let delta = *next_tail - translation;
-                let distance_squared = delta.length_squared();
-                if distance_squared > 0.0 && distance_squared <= r * r {
-                    let dir = delta.normalize();
-                    let pos_from_collider = translation + dir * r;
-                    *next_tail = head_global_pos
-                        + (pos_from_collider - head_global_pos).normalize() * bone_length;
-                }
-            }
-            Self::Capsule(_) => {
-                //TODO: Not supported yet
-            }
-        }
-    }
-
     #[inline]
     pub const fn radius(&self) -> f32 {
         match self {
