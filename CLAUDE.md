@@ -233,6 +233,19 @@ src/
 3. **Registry Dependencies**: Systems that need bone entities must run after `RequestInitializeHumanoidBones` completes
 4. **Changed Filters**: Constraint systems use `Changed<Transform>` filters for performance; ensure source transforms are actually marked as changed
 
+## 開発体制 (fork 運用)
+
+開発トランク = main (fork policy は memory 参照)。作業は feature branch 単位、worktree 推奨。
+
+- **進行 SSOT = `docs/plan/work-map.md`**: branch の起票・完了・残作業・セッション引き継ぎ事項を記録する。セッションを跨ぐ作業は `/clear` 前に必ず work-map へ反映する (これが次セッションへの引き継ぎ手段)
+- **マージ規律**: feature branch → main のマージは以下 2 つを両方経てから。**CC が自律判断で main にマージしない**
+  1. branch 完了時に `/code-review` を実行し finding を解消 (sub-phase 毎ではなく branch 完了時にまとめて)
+  2. user のマージ承認
+  - マージ実務 (merge + work-map 更新 + worktree 掃除 + docs commit) は `merge-branch` skill に従う
+- **bevy_ash_xr 連動** (本 crate は `../bevy_ash_xr` から `path = "../bevy_vrm1"` で参照される):
+  - API 変更は原則 additive (既存 API・デフォルト挙動不変) に設計し、マージ順は **vrm1 → ash_xr**。vrm1 マージ後、ash_xr main (旧コード) がビルドできることを確認してから ash_xr 側をマージする (途中で ash_xr main が壊れる瞬間を作らない)
+  - 連動 branch の検証は両リポジトリの worktree を**兄弟配置** (例: `wt/bevy_vrm1` + `wt/bevy_ash_xr`) して行う。ash_xr の相対 path 依存が worktree 側 vrm1 を指すようにするため。片方だけ branch 状態で検証すると main の vrm1 を参照してしまい検証にならない
+
 ## Memory
 
 memory の実体は repo 内 `docs/memory/` (harness auto-memory は無効化済 = `.claude/settings.json` の `autoMemoryEnabled: false`、旧 `~/.claude/projects/.../memory/` は削除済 = 書込禁止)。書込・更新は `.claude/rules/memory-format.md` の書式規律に従い手動実施。
