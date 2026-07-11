@@ -1,4 +1,5 @@
 pub mod body_tracking;
+pub mod bone_overlay;
 pub mod detach;
 pub mod expressions;
 pub(crate) mod gltf;
@@ -14,6 +15,7 @@ use crate::macros::marker_component;
 use crate::new_type;
 use crate::system_set::VrmSystemSets;
 use crate::vrm::body_tracking::BodyTrackingPlugin;
+use crate::vrm::bone_overlay::BoneOverlayPlugin;
 use crate::vrm::detach::VrmDetachPlugin;
 use crate::vrm::humanoid_bone::VrmHumanoidBonePlugin;
 use crate::vrm::initialize::VrmInitializePlugin;
@@ -31,13 +33,15 @@ use std::path::PathBuf;
 
 pub mod prelude {
     pub use crate::vrm::{
-        Initialized, RestGlobalTransform, RestTransform, Vrm, VrmBone, VrmExpression, VrmPath,
-        VrmPlugin,
+        Initialized, RestGlobalTransform, RestTransform, Vrm, VrmBone, VrmCorePlugin,
+        VrmExpression, VrmPath, VrmPlugin,
         body_tracking::{BodyTracking, SmoothedGaze},
+        bone_overlay::{BoneOverlaySystems, BoneRotationOverlay},
         detach::RequestDetachVrm,
         expressions::{
-            BinaryExpression, ClearExpressions, ExpressionEntityMap, ExpressionOverride,
-            ExpressionOverrideSettings, ExpressionOverrideType, ModifyExpressions, SetExpressions,
+            BinaryExpression, ClearExpressions, ExpressionCategory, ExpressionEntityMap,
+            ExpressionOverride, ExpressionOverrideSettings, ExpressionOverrideType,
+            ModifyExpressions, SetExpressions,
         },
         gltf::prelude::*,
         humanoid_bone::prelude::*,
@@ -117,6 +121,24 @@ impl Plugin for VrmPlugin {
         &self,
         app: &mut App,
     ) {
+        app.add_plugins((VrmCorePlugin, MtoonMaterialPlugin));
+    }
+}
+
+/// `MToon` レンダリング ([`MaterialPlugin`] 経由で wgpu `RenderApp` を要求する) を除いた
+/// VRM コア構成。ロード・初期化・SpringBone・Expression・LookAt・NodeConstraint 等、
+/// 描画バックエンドに依存しない全機能を含む。
+///
+/// 独自レンダラを使うなど wgpu `RenderPlugin` を持たないアプリはこちらを使い、
+/// `MToon` 描画は自前のパイプラインで行う ([`VrmcMaterialRegistry`] から `MToon` 拡張
+/// 情報を読める)。通常のアプリは [`VrmPlugin`] を使うこと。
+pub struct VrmCorePlugin;
+
+impl Plugin for VrmCorePlugin {
+    fn build(
+        &self,
+        app: &mut App,
+    ) {
         app.init_asset::<VrmAsset>().add_plugins((
             VrmLoaderPlugin,
             VrmInitializePlugin,
@@ -125,9 +147,9 @@ impl Plugin for VrmPlugin {
             VrmHumanoidBonePlugin,
             VrmExpressionPlugin,
             VrmNodeConstraintPlugin,
-            MtoonMaterialPlugin,
             LookAtPlugin,
             BodyTrackingPlugin,
+            BoneOverlayPlugin,
         ));
 
         // VRM spec 更新順 (https://vrm.dev/api/api_update/) を set chain で保証する。
@@ -174,5 +196,17 @@ impl Plugin for VrmPlugin {
             .register_type::<VrmBone>()
             .register_type::<VrmExpression>()
             .register_type::<Initialized>();
+
+        // MToon 抜き構成では mesh entity が MeshMaterial3d<StandardMaterial> のまま
+        // 保持されるが、generics 型は reflect の自動登録対象外のため、未登録だと
+        // scene spawn 時に panic する。MToon 系コンポーネント型の登録も MaterialPlugin
+        // とは独立にここで行う (VrmcMaterialRegistry は MToon 構成に関わらず挿入される)。
+        app.register_type::<MeshMaterial3d<StandardMaterial>>()
+            .register_type::<mtoon::prelude::MToonMaterial>()
+            .register_type::<mtoon::prelude::MToonOutline>()
+            .register_type::<mtoon::VrmcMaterialRegistry>()
+            .register_type::<mtoon::prelude::RimLighting>()
+            .register_type::<mtoon::prelude::UVAnimation>()
+            .register_type::<mtoon::prelude::Shade>();
     }
 }

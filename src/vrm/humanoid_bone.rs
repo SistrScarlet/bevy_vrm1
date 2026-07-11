@@ -8,6 +8,7 @@
 //! The setup of these is done after all bones have been spawned, so there may be a slight delay.
 
 mod bones;
+pub mod capsule_fit;
 
 use crate::prelude::*;
 use crate::vrm::gltf::extensions::VrmNode;
@@ -22,7 +23,14 @@ use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
 pub mod prelude {
-    pub use crate::vrm::humanoid_bone::bones::*;
+    pub use crate::vrm::humanoid_bone::{
+        HumanoidBoneEntities,
+        bones::*,
+        capsule_fit::{
+            HumanoidBonePositions, HumanoidCapsule, HumanoidCapsuleKind, HumanoidCapsuleRatios,
+            fit_humanoid_capsules,
+        },
+    };
 }
 
 #[derive(EntityEvent)]
@@ -30,6 +38,25 @@ pub(crate) struct RequestInitializeHumanoidBones(pub(crate) Entity);
 
 #[derive(Component, Deref, Reflect, Default)]
 pub(crate) struct HumanoidBoneRegistry(HashMap<VrmBone, Name>);
+
+/// VRM(A) ルート entity に挿入される、humanoid bone 名から bone entity への一括マップ。
+///
+/// 個別の `*BoneEntity` コンポーネント ([`HipsBoneEntity`](bones::HipsBoneEntity) 等) と
+/// 同時に構築される。多数の骨をまとめて引く場合はこちらを使うと query が簡潔になる。
+/// キーは `VRMC_vrm::humanoid` の bone 名 (`"hips"`, `"leftUpperArm"` 等)。
+#[derive(Component, Debug, Deref, Reflect, Default)]
+#[reflect(Component)]
+pub struct HumanoidBoneEntities(pub HashMap<VrmBone, Entity>);
+
+impl HumanoidBoneEntities {
+    /// bone 名から bone entity を引く。
+    pub fn find(
+        &self,
+        bone: &str,
+    ) -> Option<Entity> {
+        self.0.get(bone).copied()
+    }
+}
 
 impl HumanoidBoneRegistry {
     pub fn new(
@@ -58,6 +85,7 @@ impl Plugin for VrmHumanoidBonePlugin {
         app: &mut App,
     ) {
         app.register_type::<HumanoidBoneRegistry>()
+            .register_type::<HumanoidBoneEntities>()
             .add_plugins(BonesPlugin)
             .add_observer(apply_insert_rest_transforms)
             .add_observer(apply_initialize_humanoid_bones);
@@ -153,6 +181,7 @@ fn apply_initialize_humanoid_bones(
         ));
     }
 
+    let mut bone_entities = HumanoidBoneEntities::default();
     for (bone, name) in registry.iter() {
         let Some(bone_entity) = searcher.find_from_name(model_entity, name.as_str()) else {
             continue;
@@ -160,6 +189,7 @@ fn apply_initialize_humanoid_bones(
         let Ok((tf, gtf)) = transforms.get(bone_entity) else {
             continue;
         };
+        bone_entities.0.insert(bone.clone(), bone_entity);
         commands.entity(bone_entity).insert((
             bone.clone(),
             RestTransform(*tf),
@@ -233,4 +263,5 @@ fn apply_initialize_humanoid_bones(
             RightMiddleDistal,
         );
     }
+    commands.entity(model_entity).insert(bone_entities);
 }

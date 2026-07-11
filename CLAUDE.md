@@ -64,18 +64,26 @@ cargo clippy
 
 ### Plugin Structure
 
-The `VrmPlugin` is the main entry point that orchestrates sub-plugins:
+The `VrmPlugin` is the main entry point. It is a thin composition of `VrmCorePlugin`
+(all rendering-agnostic functionality) and `MtoonMaterialPlugin` (wgpu-based MToon
+rendering). Apps with a custom renderer (no wgpu RenderPlugin) add `VrmCorePlugin`
+directly instead — it also registers the reflect types needed for the MToon-less path
+(e.g. `MeshMaterial3d<StandardMaterial>`).
 
 ```
 VrmPlugin
-├── VrmLoaderPlugin          (Asset loading: .vrm files)
-├── VrmInitializePlugin      (VRM spawning & initialization)
-├── VrmSpringBonePlugin      (Spring physics)
-├── VrmHumanoidBonePlugin    (Bone hierarchy mapping)
-├── VrmExpressionPlugin      (Morph target expressions)
-├── VrmNodeConstraintPlugin  (VRMC_node_constraint support)
-├── MtoonMaterialPlugin      (Shader & material rendering)
-└── LookAtPlugin             (Gaze control system)
+├── VrmCorePlugin
+│   ├── VrmLoaderPlugin          (Asset loading: .vrm files)
+│   ├── VrmInitializePlugin      (VRM spawning & initialization)
+│   ├── VrmDetachPlugin          (RequestDetachVrm)
+│   ├── VrmSpringBonePlugin      (Spring physics)
+│   ├── VrmHumanoidBonePlugin    (Bone hierarchy mapping, HumanoidBoneEntities)
+│   ├── VrmExpressionPlugin      (Morph target expressions)
+│   ├── VrmNodeConstraintPlugin  (VRMC_node_constraint support)
+│   ├── LookAtPlugin             (Gaze control system)
+│   ├── BodyTrackingPlugin       (LookAt-driven head-chain tracking)
+│   └── BoneOverlayPlugin        (Additive bone rotation overlay)
+└── MtoonMaterialPlugin          (Shader & material rendering, wgpu)
 ```
 
 VRMA (animation) is a separate plugin (`VrmaPlugin`) that works alongside VrmPlugin.
@@ -208,7 +216,9 @@ src/
 │   ├── loader.rs           (VrmAsset loading)
 │   ├── initialize.rs       (VRM spawning logic)
 │   ├── expressions.rs      (Expression registry)
-│   ├── humanoid_bone.rs    (Bone mapping)
+│   ├── humanoid_bone.rs    (Bone mapping, HumanoidBoneEntities)
+│   ├── humanoid_bone/capsule_fit.rs (Bone positions → capsule approximation)
+│   ├── bone_overlay.rs     (Additive bone rotation overlay)
 │   ├── look_at.rs          (Gaze control)
 │   ├── spring_bone/        (Physics simulation)
 │   ├── node_constraint/    (Constraint types)
