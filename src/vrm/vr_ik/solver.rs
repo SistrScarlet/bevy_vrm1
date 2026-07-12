@@ -1,15 +1,15 @@
-//! VR IK の純粋幾何 solver 群 (bevy_math のみ、ECS 非依存)。
+//! VR IK の純粋幾何 solver 群 (`bevy_math` のみ、ECS 非依存)。
 //!
-//! bevy_ash_xr の `ik/solver.rs` から移管 (歩行サイクル系はアプリ側残置)。
+//! `bevy_ash_xr` の `ik/solver.rs` から移管 (歩行サイクル系はアプリ側残置)。
 //! アプリが独自の IK 適用を組む際の部品としても使えるよう pub で公開する。
 
 use bevy::math::{EulerRot, Mat3, Quat, Vec3};
 
 /// Analytical two-bone IK solver.
 ///
-/// Returns (upper_bone_rotation, lower_bone_rotation) in world space.
-/// Convention: rotation * Vec3::Y = bone direction (from joint to next joint).
-/// The pole_vector determines the elbow plane orientation.
+/// Returns (`upper_bone_rotation`, `lower_bone_rotation`) in world space.
+/// Convention: rotation * `Vec3::Y` = bone direction (from joint to next joint).
+/// The `pole_vector` determines the elbow plane orientation.
 ///
 /// When target is unreachable, distance is clamped to [|upper-lower|+ε, upper+lower-ε].
 pub fn two_bone_ik(
@@ -103,10 +103,10 @@ fn bone_rotation(
 
 /// Estimate hip world position and orientation from HMD pose.
 ///
-/// - `hip_height_ratio`: model_hip_y / model_head_y。`hip.y = hmd.y * ratio` で体長差を吸収する。
+/// - `hip_height_ratio`: `model_hip_y` / `model_head_y`。`hip.y = hmd.y * ratio` で体長差を吸収する。
 /// - `hip_xz_offset`: rest pose の (x, 0, z) オフセット。Y は ratio で計算するため 0 を渡す。
 ///
-/// Returns (hip_position, hip_rotation) where hip_rotation = Quat::from_rotation_y(hmd_yaw).
+/// Returns (`hip_position`, `hip_rotation`) where `hip_rotation` = `Quat::from_rotation_y(hmd_yaw)`.
 pub fn estimate_hip(
     hmd_translation: Vec3,
     hmd_rotation: Quat,
@@ -126,9 +126,9 @@ pub fn estimate_hip(
 
 /// Distribute rotation delta between hip and head across spine chain bones.
 ///
-/// Decomposes the rotation difference (hip_rotation → head_rotation) into yaw/pitch,
-/// then distributes by weights. Returns per-bone (yaw_delta, pitch_delta).
-/// weights.len() = number of spine chain bones (typically 4: spine, chest, neck, head).
+/// Decomposes the rotation difference (`hip_rotation` → `head_rotation`) into yaw/pitch,
+/// then distributes by weights. Returns per-bone (`yaw_delta`, `pitch_delta`).
+/// `weights.len()` = number of spine chain bones (typically 4: spine, chest, neck, head).
 ///
 /// Pitch is negated because VRM models face +Z (loaded without coordinate conversion)
 /// while OpenXR/Bevy use -Z forward. The 180° facing difference inverts the pitch

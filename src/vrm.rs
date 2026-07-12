@@ -24,6 +24,7 @@ use crate::vrm::loader::{VrmAsset, VrmLoaderPlugin};
 use crate::vrm::look_at::LookAtPlugin;
 use crate::vrm::node_constraint::VrmNodeConstraintPlugin;
 use crate::vrm::spring_bone::VrmSpringBonePlugin;
+use crate::vrm::vr_ik::{VrIkPlugin, VrIkSystems};
 use bevy::app::{AnimationSystems, App, Plugin};
 use bevy::asset::AssetApp;
 use bevy::prelude::*;
@@ -51,6 +52,12 @@ pub mod prelude {
         look_at::LookAt,
         mtoon::prelude::*,
         spring_bone::{SpringJointProps, SpringJoints, SpringRoot},
+        vr_ik::{
+            VrIk, VrIkChainCache, VrIkFootStep, VrIkLegChainCache, VrIkPose, VrIkSystems,
+            VrIkTargets,
+            calibration::{VrIkRestPositions, build_vr_ik_chain_cache},
+            solver::{distribute_spine, estimate_hip, two_bone_ik},
+        },
     };
 }
 
@@ -152,6 +159,7 @@ impl Plugin for VrmCorePlugin {
             LookAtPlugin,
             BodyTrackingPlugin,
             BoneOverlayPlugin,
+            VrIkPlugin,
         ));
 
         // VRM spec 更新順 (https://vrm.dev/api/api_update/) を set chain で保証する。
@@ -164,6 +172,7 @@ impl Plugin for VrmCorePlugin {
         app.configure_sets(
             PostUpdate,
             (
+                VrIkSystems,
                 VrmSystemSets::Constraints,
                 VrmSystemSets::PropagateAfterConstraints,
                 VrmSystemSets::GazeControl,
@@ -224,7 +233,7 @@ mod tests {
     use bevy::gltf::GltfNode;
     use bevy::scene::ScenePlugin;
 
-    /// `VrmCorePlugin` の set chain (`BoneOverlaySystems` 込み) と
+    /// `VrmCorePlugin` の set chain (`VrIkSystems` / `BoneOverlaySystems` 込み) と
     /// `.after(AnimationSystems)` / `.before(TransformSystems::Propagate)` の
     /// 順序エッジが cycle なく schedule を構築・実行できることの smoke test。
     #[test]
@@ -240,5 +249,37 @@ mod tests {
         app.add_plugins(VrmCorePlugin);
         app.update();
         app.update();
+    }
+
+    /// `VrIkSystems` が `AnimationSystems` の後・`VrmSystemSets::Constraints` の前に
+    /// 走ることの検証 (chain 組込みエッジ。IK がアニメーション出力を上書きし、
+    /// node constraint が IK 結果を同フレームで読める位置にあること)。
+    #[test]
+    fn vr_ik_runs_between_animation_and_constraints() {
+        #[derive(Resource, Default)]
+        struct Order(Vec<&'static str>);
+
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            TransformPlugin,
+            ScenePlugin,
+        ));
+        app.init_asset::<GltfNode>().init_asset::<AnimationClip>();
+        app.add_plugins(VrmCorePlugin);
+        app.init_resource::<Order>();
+        app.add_systems(
+            PostUpdate,
+            (
+                (|mut o: ResMut<Order>| o.0.push("animation")).in_set(AnimationSystems),
+                (|mut o: ResMut<Order>| o.0.push("vr_ik")).in_set(VrIkSystems),
+                (|mut o: ResMut<Order>| o.0.push("constraints"))
+                    .in_set(VrmSystemSets::Constraints),
+            ),
+        );
+        app.update();
+        let order = &app.world().resource::<Order>().0;
+        assert_eq!(order, &["animation", "vr_ik", "constraints"]);
     }
 }

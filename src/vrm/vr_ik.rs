@@ -1,6 +1,6 @@
 //! HMD / コントローラ pose から VRM humanoid 骨格を駆動する VR IK。
 //!
-//! bevy_ash_xr の `ik/` から VRM 知識層 (2 ボーン解析 IK・腰推定・スパイン分配・
+//! `bevy_ash_xr` の `ik/` から VRM 知識層 (2 ボーン解析 IK・腰推定・スパイン分配・
 //! rest-pose キャリブレーション・骨への適用) を移管したもの。歩行サイクルなどの
 //! 入力生成はアプリ側の責務で、[`VrIkTargets`] を通して毎フレーム受け取る。
 //!
@@ -17,14 +17,49 @@
 //! - 脚 IK の foot target は床 y=0 を前提とする
 //! - 同一 entity で VRM を差し替えた場合 (detach → 再ロード)、旧寸法の
 //!   [`VrIkChainCache`] が残るため手動で remove すること
-//! - LookAt / BodyTracking が同一 entity で有効な場合、head 回転は gaze 系が
+//! - `LookAt` / `BodyTracking` が同一 entity で有効な場合、head 回転は gaze 系が
 //!   IK の上に上書きする。併用の可否はアプリの責任
 
 pub mod calibration;
 pub mod solver;
+mod systems;
 
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::*;
+
+/// VR IK のシステム (キャッシュ初期化 + 毎フレーム適用) が属する `SystemSet`。
+///
+/// [`VrmCorePlugin`](crate::vrm::VrmCorePlugin) が `AnimationSystems` の後・
+/// [`VrmSystemSets::Constraints`](crate::system_set::VrmSystemSets) の前に chain で
+/// 組み込む (IK はアニメーション同様「humanoid ポーズを書く側」のため、node constraint /
+/// `LookAt` / `SpringBone` が同フレームで IK 結果を反映できる位置に置く)。
+/// [`VrIkTargets`] を書くシステムは、同フレームで反映させたい場合この set より前
+/// (`Update` など) に配置すること。
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VrIkSystems;
+
+pub struct VrIkPlugin;
+
+impl Plugin for VrIkPlugin {
+    fn build(
+        &self,
+        app: &mut App,
+    ) {
+        app.register_type::<VrIk>()
+            .register_type::<VrIkTargets>()
+            .register_type::<VrIkPose>()
+            .register_type::<VrIkFootStep>()
+            .register_type::<VrIkChainCache>()
+            .register_type::<VrIkLegChainCache>()
+            .add_systems(
+                PostUpdate,
+                (systems::init_vr_ik_chain_cache, systems::apply_vr_ik)
+                    .chain()
+                    .in_set(VrIkSystems)
+                    .run_if(any_with_component::<VrIk>),
+            );
+    }
+}
 
 /// VR IK のチューニング設定。VRM entity に挿すと IK が有効化される。
 ///
@@ -94,11 +129,11 @@ pub struct VrIkChainCache {
     pub upper_arm_len: (f32, f32),
     /// lower arm 骨の長さ (left, right)。
     pub lower_arm_len: (f32, f32),
-    /// rest pose: hips_pos - head_pos。
+    /// rest pose: `hips_pos` - `head_pos`。
     pub hip_offset: Vec3,
-    /// rest pose: shoulder_pos - head_pos (left, right)。shoulder 骨が無い場合は upper_arm 代替。
+    /// rest pose: `shoulder_pos` - `head_pos` (left, right)。shoulder 骨が無い場合は `upper_arm` 代替。
     pub shoulder_offset: (Vec3, Vec3),
-    /// model_hip_y / model_head_y。体長比 hip 高さ計算に使用。
+    /// `model_hip_y` / `model_head_y`。体長比 hip 高さ計算に使用。
     pub hip_height_ratio: f32,
     /// 脚チェーン (脚骨 6 本が揃っている場合のみ `Some`)。
     pub legs: Option<VrIkLegChainCache>,
@@ -111,8 +146,8 @@ pub struct VrIkLegChainCache {
     pub upper_leg_len: (f32, f32),
     /// lower leg 骨の長さ (left, right)。
     pub lower_leg_len: (f32, f32),
-    /// rest pose: upper_leg_pos - hips_pos (left, right)。
+    /// rest pose: `upper_leg_pos` - `hips_pos` (left, right)。
     pub upper_leg_offset: (Vec3, Vec3),
-    /// rest pose: foot_pos - hips_pos (left, right)。
+    /// rest pose: `foot_pos` - `hips_pos` (left, right)。
     pub foot_offset: (Vec3, Vec3),
 }
