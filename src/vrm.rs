@@ -10,6 +10,7 @@ pub mod look_at;
 mod mtoon;
 pub mod node_constraint;
 pub mod spring_bone;
+pub mod vr_ik;
 
 use crate::macros::marker_component;
 use crate::new_type;
