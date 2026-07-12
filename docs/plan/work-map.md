@@ -14,7 +14,7 @@
 
 ## Active Branch
 
-(なし)
+- `feat/absorb-ash-xr-vr-ik` (worktree `.claude/worktrees/absorb-ash-xr-vr-ik`、起点 `eff5319`) — batch-2: VR IK の VRM 知識層移管。2026-07-12 着手、設計フェーズから (詳細は下記残作業ブロック)
 
 ---
 
