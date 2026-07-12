@@ -14,7 +14,10 @@
 
 ## Active Branch
 
-- `feat/absorb-ash-xr-vr-ik` (worktree `.claude/worktrees/absorb-ash-xr-vr-ik`、起点 `eff5319`) — batch-2: VR IK の VRM 知識層移管。2026-07-12 着手、設計フェーズから (詳細は下記残作業ブロック)
+- `feat/absorb-ash-xr-vr-ik` (worktree `.claude/worktrees/absorb-ash-xr-vr-ik`、起点 `eff5319`) — batch-2: VR IK の VRM 知識層移管。2026-07-12 着手、**実装完了 (`9cd9123`、7 commits、テスト 34 件 GREEN + clippy 0)**。残: `/code-review` → finding 解消 → user マージ承認
+  - 設計ドキュメント: `docs/plan/absorb-ash-xr-vr-ik/` (research / design / test-list / retro)
+  - 公開 API: `VrIk` / `VrIkTargets` (外部ポーズ入力の切断面) / `VrIkChainCache` / `VrIkSystems` + solver 純粋関数 + `bone_names` 定数 (humanoid_bone)
+  - **ash_xr adopt branch への引き継ぎ**: (1) `ik/` を vrm1 API へ置換 (`FootStepState` + step 系 solver 関数はアプリ側残置、`VrIkTargets` へ毎フレーム転写する adapter system を新設)。(2) **実行順を ash_xr 版の `GazeControl` 内から chain 先頭 (`AnimationSystems` 直後・`Constraints` 前) に変更した** — twist 骨の同フレーム追従が改善する方向だが実機での見た目再検証が必要。(3) `VrIk` の未使用フィールド `pole_bias_down` / `extension_blend_start` は持ち込んでいない
 
 ---
 
