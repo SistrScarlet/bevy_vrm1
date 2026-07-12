@@ -17,8 +17,8 @@
 //! - 脚 IK の foot target は床 y=0 を前提とする
 //! - 同一 entity で VRM を差し替えた場合 (detach → 再ロード)、旧寸法の
 //!   [`VrIkChainCache`] が残るため手動で remove すること
-//! - `LookAt` / `BodyTracking` が同一 entity で有効な場合、head 回転は gaze 系が
-//!   IK の上に上書きする。併用の可否はアプリの責任
+//! - `LookAt` / `BodyTracking` が同一 entity で有効な場合、spine chain 全体
+//!   (spine/chest/neck/head) は gaze 系が IK の上に上書きする。併用の可否はアプリの責任
 
 pub mod calibration;
 pub mod solver;
@@ -129,12 +129,16 @@ pub struct VrIkChainCache {
     pub upper_arm_len: (f32, f32),
     /// lower arm 骨の長さ (left, right)。
     pub lower_arm_len: (f32, f32),
-    /// rest pose: `hips_pos` - `head_pos`。
-    pub hip_offset: Vec3,
+    /// rest pose: hips-head オフセットの XZ 成分 (x, z)。Y は `hip_height_ratio` 経由で算出。
+    pub hip_xz_offset: (f32, f32),
     /// rest pose: `shoulder_pos` - `head_pos` (left, right)。shoulder 骨が無い場合は `upper_arm` 代替。
     pub shoulder_offset: (Vec3, Vec3),
     /// `model_hip_y` / `model_head_y`。体長比 hip 高さ計算に使用。
     pub hip_height_ratio: f32,
+    /// Arm bone axis → Y 補正 (left, right)。rest lower arm local translation から算出。
+    pub arm_axis_correction: (Quat, Quat),
+    /// Arm bone axis → -Z 補正 (left, right)。hand rotation alignment 用。
+    pub arm_hand_correction: (Quat, Quat),
     /// 脚チェーン (脚骨 6 本が揃っている場合のみ `Some`)。
     pub legs: Option<VrIkLegChainCache>,
 }
@@ -150,4 +154,6 @@ pub struct VrIkLegChainCache {
     pub upper_leg_offset: (Vec3, Vec3),
     /// rest pose: `foot_pos` - `hips_pos` (left, right)。
     pub foot_offset: (Vec3, Vec3),
+    /// Leg bone axis → Y 補正 (left, right)。rest lower leg local translation から算出。
+    pub leg_axis_correction: (Quat, Quat),
 }

@@ -3,7 +3,7 @@
 //! [`build_vr_ik_chain_cache`] は VRM ロード直後の rest-pose 位置から
 //! [`VrIkChainCache`] を構築する純粋関数。panic なし、幾何計算のみ。
 
-use bevy::math::Vec3;
+use bevy::math::{Quat, Vec3};
 
 use crate::vrm::vr_ik::{VrIkChainCache, VrIkLegChainCache};
 
@@ -36,7 +36,7 @@ pub struct VrIkRestPositions {
 
 /// VRM 骨格の rest-pose world 座標から [`VrIkChainCache`] を構築する。
 ///
-/// - `hip_offset = hips - head`
+/// - `hip_xz_offset = (hips.x - head.x, hips.z - head.z)`
 /// - `hip_height_ratio = hips.y / head.y` (ゼロ除算ガード: head.y ≤ 0.01 なら 0.6)
 /// - `upper_arm_len.0 = |left_upper_arm - left_lower_arm|` (右は `.1`)
 /// - `lower_arm_len.0 = |left_hand - left_lower_arm|`
@@ -86,6 +86,7 @@ pub fn build_vr_ik_chain_cache(rest: &VrIkRestPositions) -> VrIkChainCache {
             lower_leg_len: ((l_foot - l_lower).length(), (r_foot - r_lower).length()),
             upper_leg_offset: (l_upper - rest.hips, r_upper - rest.hips),
             foot_offset: (l_foot - rest.hips, r_foot - rest.hips),
+            leg_axis_correction: (Quat::IDENTITY, Quat::IDENTITY),
         }),
         _ => None,
     };
@@ -93,9 +94,11 @@ pub fn build_vr_ik_chain_cache(rest: &VrIkRestPositions) -> VrIkChainCache {
     VrIkChainCache {
         upper_arm_len,
         lower_arm_len,
-        hip_offset,
+        hip_xz_offset: (hip_offset.x, hip_offset.z),
         shoulder_offset,
         hip_height_ratio,
+        arm_axis_correction: (Quat::IDENTITY, Quat::IDENTITY),
+        arm_hand_correction: (Quat::IDENTITY, Quat::IDENTITY),
         legs,
     }
 }
@@ -129,9 +132,9 @@ mod tests {
             right_foot: Some(Vec3::new(0.1, 0.0, 0.0)),
         });
         assert!(
-            (cache.hip_offset - Vec3::new(0.0, -0.7, 0.0)).length() < 0.01,
-            "hip_offset mismatch: {:?}",
-            cache.hip_offset
+            cache.hip_xz_offset.0.abs() < 0.01 && cache.hip_xz_offset.1.abs() < 0.01,
+            "hip_xz_offset mismatch: {:?}",
+            cache.hip_xz_offset
         );
         assert!(
             (cache.upper_arm_len.0 - 0.3).abs() < 0.01,
@@ -233,9 +236,9 @@ mod tests {
             right_foot: None,
         });
         assert!(
-            (cache.hip_offset - Vec3::new(0.0, -0.7, 0.0)).length() < 0.01,
-            "hip_offset mismatch: {:?}",
-            cache.hip_offset
+            cache.hip_xz_offset.0.abs() < 0.01 && cache.hip_xz_offset.1.abs() < 0.01,
+            "hip_xz_offset mismatch: {:?}",
+            cache.hip_xz_offset
         );
         // shoulder_offset.0: left_upper_arm - head = (-0.2,1.5,0) - (0,1.7,0) = (-0.2,-0.2,0)
         assert!(

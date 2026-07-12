@@ -13,9 +13,7 @@ use crate::vrm::vr_ik::{VrIk, VrIkChainCache, VrIkTargets};
 use crate::vrm::{RestGlobalTransform, RestTransform};
 
 /// VRM は +Z 前方 (glTF 座標のまま無変換ロード)。Ry(π) で Bevy/OpenXR の -Z 前方に合わせる。
-fn model_flip() -> Quat {
-    Quat::from_rotation_y(std::f32::consts::PI)
-}
+const MODEL_FLIP: Quat = Quat::from_xyzw(0.0, 1.0, 0.0, 0.0);
 
 /// [`VrIk`] を持つが [`VrIkChainCache`] をまだ持たない entity に対してキャッシュを初期化する。
 ///
@@ -27,6 +25,7 @@ pub(crate) fn init_vr_ik_chain_cache(
     mut commands: Commands,
     vrms: Query<(Entity, &HumanoidBoneEntities), (With<VrIk>, Without<VrIkChainCache>)>,
     rest_globals: Query<&RestGlobalTransform>,
+    rest_locals: Query<&RestTransform>,
 ) {
     for (entity, bones) in &vrms {
         let rest_pos = |bone: &str| -> Option<Vec3> {
@@ -75,7 +74,7 @@ pub(crate) fn init_vr_ik_chain_cache(
             continue;
         };
 
-        let cache = build_vr_ik_chain_cache(&VrIkRestPositions {
+        let mut cache = build_vr_ik_chain_cache(&VrIkRestPositions {
             head,
             neck: rest_pos(bone_names::NECK),
             chest: rest_pos(bone_names::CHEST),
@@ -96,6 +95,36 @@ pub(crate) fn init_vr_ik_chain_cache(
             right_lower_leg: rest_pos(bone_names::RIGHT_LOWER_LEG),
             right_foot: rest_pos(bone_names::RIGHT_FOOT),
         });
+
+        let bone_axis_from_rest = |bone: &str| -> Option<Vec3> {
+            bones
+                .find(bone)
+                .and_then(|e| rest_locals.get(e).ok())
+                .map(|rt| rt.translation.normalize_or_zero())
+                .filter(|a| a.length() > 0.5)
+        };
+
+        let l_arm_axis = bone_axis_from_rest(bone_names::LEFT_LOWER_ARM).unwrap_or(Vec3::Y);
+        let r_arm_axis = bone_axis_from_rest(bone_names::RIGHT_LOWER_ARM).unwrap_or(Vec3::Y);
+        cache.arm_axis_correction = (
+            Quat::from_rotation_arc(l_arm_axis, Vec3::Y),
+            Quat::from_rotation_arc(r_arm_axis, Vec3::Y),
+        );
+        cache.arm_hand_correction = (
+            Quat::from_rotation_arc(l_arm_axis, Vec3::NEG_Z),
+            Quat::from_rotation_arc(r_arm_axis, Vec3::NEG_Z),
+        );
+
+        if let Some(ref mut legs) = cache.legs {
+            let l_leg_axis = bone_axis_from_rest(bone_names::LEFT_LOWER_LEG).unwrap_or(Vec3::NEG_Y);
+            let r_leg_axis =
+                bone_axis_from_rest(bone_names::RIGHT_LOWER_LEG).unwrap_or(Vec3::NEG_Y);
+            legs.leg_axis_correction = (
+                Quat::from_rotation_arc(l_leg_axis, Vec3::Y),
+                Quat::from_rotation_arc(r_leg_axis, Vec3::Y),
+            );
+        }
+
         commands.entity(entity).insert(cache);
     }
 }
@@ -140,7 +169,7 @@ pub(crate) fn apply_vr_ik(
             continue;
         };
         // 1. Hip 位置・姿勢を推定して書き込む
-        let hip_xz_offset = Vec3::new(cache.hip_offset.x, 0.0, cache.hip_offset.z);
+        let hip_xz_offset = Vec3::new(cache.hip_xz_offset.0, 0.0, cache.hip_xz_offset.1);
         let (hip_pos, hip_rot) = estimate_hip(
             head_target.translation,
             head_target.rotation,
@@ -149,7 +178,7 @@ pub(crate) fn apply_vr_ik(
         );
         if let Ok(mut tf) = transforms.get_mut(hips_bone) {
             tf.translation = hip_pos;
-            tf.rotation = hip_rot * model_flip();
+            tf.rotation = hip_rot * MODEL_FLIP;
         }
 
         // 2. Spine chain に分配された回転差分を適用
@@ -186,7 +215,7 @@ pub(crate) fn apply_vr_ik(
         // X,Z が反転するため、offset を model_flip で回転して実際のボーン位置に合わせる。
         if let Some(left_target) = targets.left_hand {
             let left_shoulder_world = head_target.translation
-                + head_target.rotation * (model_flip() * cache.shoulder_offset.0);
+                + head_target.rotation * (MODEL_FLIP * cache.shoulder_offset.0);
             apply_arm_ik(
                 left_shoulder_world,
                 left_target.translation,
@@ -194,6 +223,9 @@ pub(crate) fn apply_vr_ik(
                 cache.upper_arm_len.0,
                 cache.lower_arm_len.0,
                 Vec3::NEG_Y,
+                hip_rot,
+                cache.arm_axis_correction.0,
+                cache.arm_hand_correction.0,
                 left_upper_arm_bone,
                 left_lower_arm_bone,
                 left_hand_bone,
@@ -204,7 +236,7 @@ pub(crate) fn apply_vr_ik(
 
         if let Some(right_target) = targets.right_hand {
             let right_shoulder_world = head_target.translation
-                + head_target.rotation * (model_flip() * cache.shoulder_offset.1);
+                + head_target.rotation * (MODEL_FLIP * cache.shoulder_offset.1);
             apply_arm_ik(
                 right_shoulder_world,
                 right_target.translation,
@@ -212,6 +244,9 @@ pub(crate) fn apply_vr_ik(
                 cache.upper_arm_len.1,
                 cache.lower_arm_len.1,
                 Vec3::NEG_Y,
+                hip_rot,
+                cache.arm_axis_correction.1,
+                cache.arm_hand_correction.1,
                 right_upper_arm_bone,
                 right_lower_arm_bone,
                 right_hand_bone,
@@ -241,12 +276,12 @@ pub(crate) fn apply_vr_ik(
                 legs.foot_offset.0,
                 legs.upper_leg_len.0,
                 legs.lower_leg_len.0,
+                legs.leg_axis_correction.0,
                 l_upper,
                 l_lower,
                 step.left_offset_xz,
                 step.left_height,
                 &mut transforms,
-                &rest_transforms,
             );
 
             apply_leg_ik(
@@ -256,12 +291,12 @@ pub(crate) fn apply_vr_ik(
                 legs.foot_offset.1,
                 legs.upper_leg_len.1,
                 legs.lower_leg_len.1,
+                legs.leg_axis_correction.1,
                 r_upper,
                 r_lower,
                 step.right_offset_xz,
                 step.right_height,
                 &mut transforms,
-                &rest_transforms,
             );
 
             // foot 骨は lower_leg の子として自動追従 (POC 品質)
@@ -272,7 +307,7 @@ pub(crate) fn apply_vr_ik(
 /// 片脚の `two_bone_ik` を解いて Transform を書き込むヘルパ。
 ///
 /// Bone axis correction: VRM 脚 bone axis = -Y (arm の ±X と異なる)。
-/// `lower_leg` の rest local translation から bone axis を導出し、solver 出力に補正回転を適用する。
+/// キャッシュ済みの `axis_correction` を solver 出力に適用する。
 ///
 /// `step_offset_xz`: 歩行 XZ オフセット (Y 成分は無視)。
 /// `step_height`: 足上げ Y オフセット (foot target の Y 絶対値。床 y=0 前提)。
@@ -285,18 +320,18 @@ fn apply_leg_ik(
     foot_offset: Vec3,
     upper_len: f32,
     lower_len: f32,
+    axis_correction: Quat,
     upper_leg_entity: Entity,
     lower_leg_entity: Entity,
     step_offset_xz: Vec3,
     step_height: f32,
     transforms: &mut Query<&mut Transform>,
-    rest_transforms: &Query<(&RestTransform, &RestGlobalTransform)>,
 ) {
     // upper_leg joint の world 位置
-    let upper_leg_joint = hip_world_pos + hip_rotation * model_flip() * upper_leg_offset;
+    let upper_leg_joint = hip_world_pos + hip_rotation * MODEL_FLIP * upper_leg_offset;
 
     // 足先 target: rest offset を hip yaw + model_flip で回転 + step offset
-    let foot_xz_rotated = hip_rotation * model_flip() * foot_offset;
+    let foot_xz_rotated = hip_rotation * MODEL_FLIP * foot_offset;
     let foot_target = Vec3::new(
         hip_world_pos.x + foot_xz_rotated.x + step_offset_xz.x,
         step_height,
@@ -314,22 +349,12 @@ fn apply_leg_ik(
         pole_vector,
     );
 
-    // Bone axis correction: lower_leg の rest local translation から bone axis 取得
-    // (VRM 脚骨は -Y 方向 = 上から下)
-    let bone_axis = rest_transforms
-        .get(lower_leg_entity)
-        .ok()
-        .map(|(rest_tf, _)| rest_tf.translation.normalize_or_zero())
-        .filter(|a| a.length() > 0.5)
-        .unwrap_or(Vec3::NEG_Y);
-    let axis_correction = Quat::from_rotation_arc(bone_axis, Vec3::Y);
-
     let upper_leg_world = upper_solver_rot * axis_correction;
     let lower_leg_world = lower_solver_rot * axis_correction;
 
     // Upper leg: parent = hips 骨、hips の world rot = hip_rotation * model_flip
     if let Ok(mut tf) = transforms.get_mut(upper_leg_entity) {
-        let hips_world_rot = hip_rotation * model_flip();
+        let hips_world_rot = hip_rotation * MODEL_FLIP;
         tf.rotation = hips_world_rot.inverse() * upper_leg_world;
     }
 
@@ -342,12 +367,12 @@ fn apply_leg_ik(
 /// 片腕の `two_bone_ik` を解いて Transform を書き込むヘルパ。
 ///
 /// Bone axis correction: solver は Y = bone direction 規約だが、VRM 骨の子は
-/// X 軸方向 (L: +X, R: -X) に配置されている。lower arm の rest local translation
-/// から実際の bone axis を導出し、solver 出力に補正回転を適用する。
+/// X 軸方向 (L: +X, R: -X) に配置されている。キャッシュ済みの `axis_correction` を
+/// solver 出力に適用する。
 ///
-/// Upper arm: world→local は rest parent + `model_flip` (Ry(π)) 近似。
+/// Upper arm: world→local は `hip_rotation * model_flip * rest parent` 近似。
 /// Lower arm / hand: parent world rot は補正済み solver 出力から正確に得られる。
-/// Hand: VRM rest finger axis (±X) → controller forward (-Z) の追加補正。
+/// Hand: キャッシュ済みの `hand_correction` で controller forward (-Z) に揃える。
 fn apply_arm_ik(
     shoulder_world: Vec3,
     wrist_target: Vec3,
@@ -355,22 +380,15 @@ fn apply_arm_ik(
     upper_len: f32,
     lower_len: f32,
     pole_vector: Vec3,
+    hip_rotation: Quat,
+    axis_correction: Quat,
+    hand_correction: Quat,
     upper_arm_entity: Entity,
     lower_arm_entity: Entity,
     hand_entity: Entity,
     transforms: &mut Query<&mut Transform>,
     rest_transforms: &Query<(&RestTransform, &RestGlobalTransform)>,
 ) {
-    // Bone axis correction: solver uses Y = bone direction convention,
-    // but VRM bones have children along X axis (L: +X, R: -X).
-    let bone_axis = rest_transforms
-        .get(lower_arm_entity)
-        .ok()
-        .map(|(rest_tf, _)| rest_tf.translation.normalize_or_zero())
-        .filter(|a| a.length() > 0.5)
-        .unwrap_or(Vec3::Y);
-    let axis_correction = Quat::from_rotation_arc(bone_axis, Vec3::Y);
-
     let (upper_solver_rot, lower_solver_rot) = two_bone_ik(
         shoulder_world,
         wrist_target,
@@ -382,13 +400,13 @@ fn apply_arm_ik(
     let upper_bone_world = upper_solver_rot * axis_correction;
     let lower_bone_world = lower_solver_rot * axis_correction;
 
-    // Upper arm: rest parent + model_flip 近似 (spine IK の影響は無視)
+    // Upper arm: hip_rotation * model_flip * rest parent 近似 (spine delta は無視)
     if let (Ok(mut tf), Ok((rest_tf, rest_gtf))) = (
         transforms.get_mut(upper_arm_entity),
         rest_transforms.get(upper_arm_entity),
     ) {
         let parent_rest_world = rest_gtf.rotation() * rest_tf.rotation.inverse();
-        let corrected_parent = parent_rest_world * model_flip();
+        let corrected_parent = hip_rotation * MODEL_FLIP * parent_rest_world;
         tf.rotation = corrected_parent.inverse() * upper_bone_world;
     }
 
@@ -398,7 +416,6 @@ fn apply_arm_ik(
     }
 
     // Hand: align VRM rest finger axis (±X) with controller forward (-Z)
-    let hand_correction = Quat::from_rotation_arc(bone_axis, Vec3::NEG_Z);
     if let Ok(mut tf) = transforms.get_mut(hand_entity) {
         tf.rotation = lower_bone_world.inverse() * controller_rotation * hand_correction;
     }
@@ -915,6 +932,51 @@ mod tests {
         assert!(
             ((elbow - wrist_target).length() - 0.3).abs() < 0.02,
             "elbow-wrist distance: elbow={elbow:?}"
+        );
+    }
+
+    #[test]
+    fn arm_ik_correct_with_hip_yaw() {
+        let mut app = test_ik_app();
+        let skeleton = spawn_skeleton(app.world_mut(), SkeletonOptions::default());
+        let yaw = std::f32::consts::FRAC_PI_4; // 45° 右回転
+        let head_rot = Quat::from_rotation_y(yaw);
+        // 肩 world: head + head_rot * (MODEL_FLIP * shoulder_offset)
+        let flip = Quat::from_rotation_y(std::f32::consts::PI);
+        let shoulder_offset = Vec3::new(-0.15, -0.15, 0.0); // rest 左 shoulder offset
+        let shoulder_world =
+            Vec3::new(0.0, 1.7, 0.0) + head_rot * (flip * shoulder_offset);
+        // wrist を肩の前方 0.4 (到達可能) に配置
+        let arm_forward = head_rot * Vec3::NEG_Z;
+        let wrist_target = shoulder_world + arm_forward * 0.4;
+        set_targets(&mut app, skeleton.root, |t| {
+            t.head = Some(VrIkPose {
+                translation: Vec3::new(0.0, 1.7, 0.0),
+                rotation: head_rot,
+            });
+            t.left_hand = Some(VrIkPose {
+                translation: wrist_target,
+                rotation: Quat::IDENTITY,
+            });
+        });
+        app.update();
+
+        // 復元: corrected_parent = hip_rot * MODEL_FLIP * parent_rest_world
+        // fixture は rest 全 identity なので corrected_parent = hip_rot * flip
+        let hip_rot = head_rot; // estimate_hip: yaw=head_yaw
+        let corrected_parent = hip_rot * flip;
+        let upper_local = bone_rotation_of(&app, &skeleton, bone_names::LEFT_UPPER_ARM);
+        let upper_world = corrected_parent * upper_local;
+        let bone_axis = Vec3::NEG_X; // 左腕
+        let upper_dir = upper_world * bone_axis;
+        let elbow = shoulder_world + upper_dir * 0.3;
+        assert!(
+            ((elbow - shoulder_world).length() - 0.3).abs() < 0.02,
+            "shoulder-elbow distance with yaw: elbow={elbow:?}"
+        );
+        assert!(
+            ((elbow - wrist_target).length() - 0.3).abs() < 0.02,
+            "elbow-wrist distance with yaw: elbow={elbow:?}, wrist={wrist_target:?}"
         );
     }
 
