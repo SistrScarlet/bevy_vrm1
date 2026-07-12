@@ -143,4 +143,7 @@ ash_xr の `ik/` からは solver の step 系関数と `FootStepState` + `updat
 
 ## TDD からの発見
 
-(TDD フェーズで追記される)
+- **`build_vr_ik_chain_cache` の入力 struct 化を採用** (`VrIkRestPositions`、名前付きフィールド 19 個)。ash_xr 版の位置引数 19 個は `Option<Vec3>` の並び間違いがコンパイルを通るため pub API には不適だった
+- **ECS テストの fixture は平坦 entity 群で十分**: IK システムは propagation を使わず `RestTransform`/`RestGlobalTransform` しか読まないため、骨の親子関係 (`ChildOf`) を組む必要がなかった。world 座標の検証は rest 階層 (identity 回転) からの手動合成で行い、TransformPlugin も不要
+- **`VrIkPlugin` は素の `App::new()` で動く**: asset / scene 依存がないため ECS テストが軽量 (`MinimalPlugins` すら不要)
+- **change detection の非汚染検証**: `head: None` テストは `Changed<Transform>` を数える probe システムを `VrIkSystems` の後に置く方式で観測可能だった

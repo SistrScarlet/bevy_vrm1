@@ -87,7 +87,8 @@ VrmPlugin
 │   ├── VrmNodeConstraintPlugin  (VRMC_node_constraint support)
 │   ├── LookAtPlugin             (Gaze control system)
 │   ├── BodyTrackingPlugin       (LookAt-driven head-chain tracking)
-│   └── BoneOverlayPlugin        (Additive bone rotation overlay)
+│   ├── BoneOverlayPlugin        (Additive bone rotation overlay)
+│   └── VrIkPlugin               (VR IK: external-pose-driven humanoid posing)
 └── MtoonMaterialPlugin          (Shader & material rendering, wgpu)
 ```
 
@@ -105,6 +106,8 @@ The system execution order follows the [VRM specification](https://vrm.dev/api/a
 
 ```
 Animation (Bevy standard)
+    ↓
+VrIkSystems (VR IK — HMD/controller pose → humanoid bones, via VrIkTargets)
     ↓
 VrmSystemSets::Constraints
     ↓
@@ -226,9 +229,13 @@ src/
 │   ├── loader.rs           (VrmAsset loading)
 │   ├── initialize.rs       (VRM spawning logic)
 │   ├── expressions.rs      (Expression registry)
-│   ├── humanoid_bone.rs    (Bone mapping, HumanoidBoneEntities)
+│   ├── humanoid_bone.rs    (Bone mapping, HumanoidBoneEntities, bone_names)
 │   ├── humanoid_bone/capsule_fit.rs (Bone positions → capsule approximation)
 │   ├── bone_overlay.rs     (Additive bone rotation overlay)
+│   ├── vr_ik.rs            (VR IK: VrIk / VrIkTargets / VrIkChainCache)
+│   ├── vr_ik/solver.rs     (two_bone_ik / estimate_hip / distribute_spine)
+│   ├── vr_ik/calibration.rs (Rest-pose → VrIkChainCache)
+│   ├── vr_ik/systems.rs    (Cache init + per-frame IK application)
 │   ├── look_at.rs          (Gaze control)
 │   ├── spring_bone/        (Physics simulation)
 │   ├── node_constraint/    (Constraint types)
