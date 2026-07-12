@@ -10,6 +10,68 @@
 mod bones;
 pub mod capsule_fit;
 
+/// `VRMC_vrm::humanoid` の骨名定数 (camelCase、VRM 1.0 仕様の全 humanoid 骨)。
+///
+/// [`HumanoidBoneEntities::find`] や [`VrmBone`] のキーとして bare literal を書くと
+/// typo がコンパイルを通り、silent に機能不発となる。必ずここを経由すること。
+pub mod bone_names {
+    pub const HIPS: &str = "hips";
+    pub const SPINE: &str = "spine";
+    pub const CHEST: &str = "chest";
+    pub const UPPER_CHEST: &str = "upperChest";
+    pub const NECK: &str = "neck";
+    pub const HEAD: &str = "head";
+    pub const LEFT_EYE: &str = "leftEye";
+    pub const RIGHT_EYE: &str = "rightEye";
+    pub const JAW: &str = "jaw";
+    pub const LEFT_SHOULDER: &str = "leftShoulder";
+    pub const LEFT_UPPER_ARM: &str = "leftUpperArm";
+    pub const LEFT_LOWER_ARM: &str = "leftLowerArm";
+    pub const LEFT_HAND: &str = "leftHand";
+    pub const RIGHT_SHOULDER: &str = "rightShoulder";
+    pub const RIGHT_UPPER_ARM: &str = "rightUpperArm";
+    pub const RIGHT_LOWER_ARM: &str = "rightLowerArm";
+    pub const RIGHT_HAND: &str = "rightHand";
+    pub const LEFT_UPPER_LEG: &str = "leftUpperLeg";
+    pub const LEFT_LOWER_LEG: &str = "leftLowerLeg";
+    pub const LEFT_FOOT: &str = "leftFoot";
+    pub const LEFT_TOES: &str = "leftToes";
+    pub const RIGHT_UPPER_LEG: &str = "rightUpperLeg";
+    pub const RIGHT_LOWER_LEG: &str = "rightLowerLeg";
+    pub const RIGHT_FOOT: &str = "rightFoot";
+    pub const RIGHT_TOES: &str = "rightToes";
+    pub const LEFT_THUMB_METACARPAL: &str = "leftThumbMetacarpal";
+    pub const LEFT_THUMB_PROXIMAL: &str = "leftThumbProximal";
+    pub const LEFT_THUMB_DISTAL: &str = "leftThumbDistal";
+    pub const LEFT_INDEX_PROXIMAL: &str = "leftIndexProximal";
+    pub const LEFT_INDEX_INTERMEDIATE: &str = "leftIndexIntermediate";
+    pub const LEFT_INDEX_DISTAL: &str = "leftIndexDistal";
+    pub const LEFT_MIDDLE_PROXIMAL: &str = "leftMiddleProximal";
+    pub const LEFT_MIDDLE_INTERMEDIATE: &str = "leftMiddleIntermediate";
+    pub const LEFT_MIDDLE_DISTAL: &str = "leftMiddleDistal";
+    pub const LEFT_RING_PROXIMAL: &str = "leftRingProximal";
+    pub const LEFT_RING_INTERMEDIATE: &str = "leftRingIntermediate";
+    pub const LEFT_RING_DISTAL: &str = "leftRingDistal";
+    pub const LEFT_LITTLE_PROXIMAL: &str = "leftLittleProximal";
+    pub const LEFT_LITTLE_INTERMEDIATE: &str = "leftLittleIntermediate";
+    pub const LEFT_LITTLE_DISTAL: &str = "leftLittleDistal";
+    pub const RIGHT_THUMB_METACARPAL: &str = "rightThumbMetacarpal";
+    pub const RIGHT_THUMB_PROXIMAL: &str = "rightThumbProximal";
+    pub const RIGHT_THUMB_DISTAL: &str = "rightThumbDistal";
+    pub const RIGHT_INDEX_PROXIMAL: &str = "rightIndexProximal";
+    pub const RIGHT_INDEX_INTERMEDIATE: &str = "rightIndexIntermediate";
+    pub const RIGHT_INDEX_DISTAL: &str = "rightIndexDistal";
+    pub const RIGHT_MIDDLE_PROXIMAL: &str = "rightMiddleProximal";
+    pub const RIGHT_MIDDLE_INTERMEDIATE: &str = "rightMiddleIntermediate";
+    pub const RIGHT_MIDDLE_DISTAL: &str = "rightMiddleDistal";
+    pub const RIGHT_RING_PROXIMAL: &str = "rightRingProximal";
+    pub const RIGHT_RING_INTERMEDIATE: &str = "rightRingIntermediate";
+    pub const RIGHT_RING_DISTAL: &str = "rightRingDistal";
+    pub const RIGHT_LITTLE_PROXIMAL: &str = "rightLittleProximal";
+    pub const RIGHT_LITTLE_INTERMEDIATE: &str = "rightLittleIntermediate";
+    pub const RIGHT_LITTLE_DISTAL: &str = "rightLittleDistal";
+}
+
 use crate::error::vrm_warn;
 use crate::prelude::*;
 use crate::vrm::gltf::extensions::VrmNode;
@@ -25,7 +87,7 @@ use bevy::prelude::*;
 
 pub mod prelude {
     pub use crate::vrm::humanoid_bone::{
-        HumanoidBoneEntities,
+        HumanoidBoneEntities, bone_names,
         bones::*,
         capsule_fit::{
             HumanoidBonePositions, HumanoidCapsule, HumanoidCapsuleKind, HumanoidCapsuleRatios,
