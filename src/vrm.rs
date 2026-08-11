@@ -2,6 +2,7 @@ pub mod body_tracking;
 pub mod bone_overlay;
 pub mod detach;
 pub mod expressions;
+pub mod first_person;
 pub(crate) mod gltf;
 pub mod humanoid_bone;
 pub mod initialize;
@@ -18,6 +19,7 @@ use crate::system_set::VrmSystemSets;
 use crate::vrm::body_tracking::BodyTrackingPlugin;
 use crate::vrm::bone_overlay::{BoneOverlayPlugin, BoneOverlaySystems};
 use crate::vrm::detach::VrmDetachPlugin;
+use crate::vrm::first_person::VrmFirstPersonPlugin;
 use crate::vrm::humanoid_bone::VrmHumanoidBonePlugin;
 use crate::vrm::initialize::VrmInitializePlugin;
 use crate::vrm::loader::{VrmAsset, VrmLoaderPlugin};
@@ -154,6 +156,7 @@ impl Plugin for VrmCorePlugin {
             VrmDetachPlugin,
             VrmSpringBonePlugin,
             VrmHumanoidBonePlugin,
+            VrmFirstPersonPlugin,
             VrmExpressionPlugin,
             VrmNodeConstraintPlugin,
             LookAtPlugin,

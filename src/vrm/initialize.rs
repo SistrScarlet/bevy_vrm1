@@ -1,6 +1,7 @@
 use crate::error::vrm_error;
 use crate::prelude::ChildSearcher;
 use crate::vrm::expressions::{RequestInitializeExpressions, VrmExpressionRegistry};
+use crate::vrm::first_person::{FirstPersonMeshRegistry, RequestInitializeFirstPerson};
 use crate::vrm::gltf::extensions::VrmExtensions;
 use crate::vrm::humanoid_bone::{HumanoidBoneRegistry, RequestInitializeHumanoidBones};
 use crate::vrm::loader::{VrmAsset, VrmHandle};
@@ -78,6 +79,7 @@ fn spawn_vrm(
                 &vrm.gltf.nodes,
             ),
             NodeConstraintRegistry::new(&vrm.gltf, &node_assets),
+            FirstPersonMeshRegistry::new(&extensions, &node_assets, &vrm.gltf.nodes),
         ));
 
         if let Some(spring_bone) = extensions.vrmc_spring_bone.as_ref() {
@@ -125,7 +127,8 @@ fn request_initialize(
             .entity(root)
             .trigger(RequestInitializeHumanoidBones)
             .trigger(RequestInitializeSpringBone)
-            .trigger(RequestInitializeNodeConstraints);
+            .trigger(RequestInitializeNodeConstraints)
+            .trigger(RequestInitializeFirstPerson);
         if has_vrma {
             // RequestUpdateAnimationGraph is now triggered from trigger_loaded
             // (vrma/initialize.rs) after Added<Initialized> is detected, ensuring

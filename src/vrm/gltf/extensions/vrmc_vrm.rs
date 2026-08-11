@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub struct VrmcVrm {
     pub expressions: Option<Expressions>,
-    // #[serde(rename = "firstPerson")]
-    // pub first_person: Option<FirstPerson>,
+    #[serde(rename = "firstPerson")]
+    pub first_person: Option<FirstPerson>,
     pub humanoid: Humanoid,
     #[serde(rename = "lookAt")]
     pub look_at: Option<LookAtProperties>,
@@ -50,16 +50,34 @@ pub struct Humanoid {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Struct6 {
+pub struct MeshAnnotation {
     pub node: i64,
     #[serde(rename = "type")]
-    pub r#type: String,
+    pub r#type: FirstPersonType,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct FirstPerson {
     #[serde(rename = "meshAnnotations")]
-    pub mesh_annotations: Vec<Struct6>,
+    pub mesh_annotations: Vec<MeshAnnotation>,
+}
+
+/// `VRMC_vrm::firstPerson::meshAnnotations[].type` の値。
+///
+/// 一人称視点でのメッシュの表示方針を表す。仕様上の既定値は `auto` で、未知の値
+/// (将来の VRM 仕様拡張等) は `Unknown` へ fallback させる (`#[serde(other)]` は
+/// enum 最後の unit variant にしか付けられない制約のため、`Auto` に直接は付けられない)。
+/// 消費側は `Unknown` を `Auto` と同じ意味論として扱うこと。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default, Reflect)]
+#[serde(rename_all = "camelCase")]
+pub enum FirstPersonType {
+    #[default]
+    Auto,
+    Both,
+    ThirdPersonOnly,
+    FirstPersonOnly,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize)]
