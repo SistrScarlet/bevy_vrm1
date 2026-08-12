@@ -58,7 +58,7 @@ pub struct MeshAnnotation {
 
 #[derive(Serialize, Deserialize)]
 pub struct FirstPerson {
-    #[serde(rename = "meshAnnotations")]
+    #[serde(rename = "meshAnnotations", default)]
     pub mesh_annotations: Vec<MeshAnnotation>,
 }
 
